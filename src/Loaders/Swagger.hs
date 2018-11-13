@@ -19,6 +19,7 @@ import           Web.HttpApiData         (ToHttpApiData (..))
 
 --import           Control.Error       (EitherT)
 import           Control.Lens
+import           Control.Monad           ((>>=))
 import           Data.Aeson              (FromJSON)
 import           Data.Maybe              (maybe)
 import           Data.Monoid             ((<>))
@@ -45,7 +46,14 @@ testSwagger = do
     Right swagger -> do
       let contactInfoM = swagger ^. (SWAG.info . SWAG.contact)
       putStrLn $ "Contact Info: " ++ show (maybe mempty id contactInfoM)
-      let endPointPaths = swagger ^. SWAG.paths
+      let getOpsM = view SWAG.get
+          opsSummaryM x = x >>= SWAG._operationSummary
+          showGetOps path pathInfo =
+            let hasGet = getOpsM pathInfo
+                getTxt = maybe (T.pack "No GET") (const $ T.pack "GET") hasGet
+                suffix = ": " <> getTxt <> (maybe ("") ("=" <>) . opsSummaryM . getOpsM $ pathInfo)
+            in [(T.pack path) <> suffix]
+          endPointPaths = iconcatMap showGetOps (swagger ^. SWAG.paths)
       putStrLn $ "Endpoints: " ++ show endPointPaths
 
 

@@ -1,0 +1,3 @@
+packages: ./OpenFEC-servant ./ExploreFEC
+jobs: 4
+with-compiler: /usr/local/bin/ghc

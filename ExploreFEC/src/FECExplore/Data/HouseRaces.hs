@@ -6,41 +6,38 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
-module Loaders.Swagger where
+module FECExplore.Data.HouseRaces where
 
 import           Servant.API
 import           Servant.Client
---import           Servant.Common.Req
 
 import           Network.HTTP.Client     (Manager, defaultManagerSettings,
                                           newManager)
 import           Network.HTTP.Client.TLS (tlsManagerSettings)
 import           Web.HttpApiData         (ToHttpApiData (..))
 
---import           Control.Error       (EitherT)
+{-
 import           Control.Lens
 import           Control.Monad           ((>>=))
-import           Data.Aeson              (FromJSON)
+import qualified Data.Aeson              as Aeson
+import qualified Data.Aeson.Lens         as Aeson
 import           Data.Maybe              (maybe)
 import           Data.Monoid             ((<>))
 import           Data.Proxy              (Proxy (Proxy))
 import qualified Data.Swagger            as SWAG
 import qualified Data.Text               as T
 import           GHC.TypeLits            (KnownSymbol, Symbol)
+-}
 
+import qualified OpenFEC.API             as FEC
+import qualified OpenFEC.Types           as FEC
 
-type FEC_API = "swagger" :> Get '[JSON] SWAG.Swagger
-
-fecAPI :: Proxy FEC_API
-fecAPI = Proxy
-
-getSwagger :: ClientM SWAG.Swagger
-getSwagger = client fecAPI
-
-testSwagger :: IO ()
-testSwagger = do
+testHouseRaces :: IO ()
+testHouseRaces = do
+  let apiKey = "jjt0sf4z7FVpSAXoTndlnLKl0sDZUFcf3PQjpXrW"
   manager <- newManager tlsManagerSettings
-  res <- runClientM getSwagger (mkClientEnv manager (BaseUrl Https "api.open.fec.gov" 443 ""))
+  return ()
+{-  res <- runClientM getSwagger (mkClientEnv manager (BaseUrl Https "api.open.fec.gov" 443 ""))
   case res of
     Left err       -> putStrLn $ "Error: " ++ show err
     Right swagger -> do
@@ -55,6 +52,7 @@ testSwagger = do
             in [(T.pack path) <> suffix]
           endPointPaths = iconcatMap showGetOps (swagger ^. SWAG.paths)
       putStrLn $ "Endpoints: " ++ show endPointPaths
+-}
 
 
 

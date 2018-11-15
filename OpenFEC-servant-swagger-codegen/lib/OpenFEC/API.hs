@@ -27,27 +27,34 @@ module OpenFEC.API
 
 import           OpenFEC.Types
 
-import           Control.Monad.Except      (ExceptT)
+import           Control.Monad.Except               (ExceptT)
 import           Control.Monad.IO.Class
-import           Data.Aeson                (Value)
-import           Data.Coerce               (coerce)
-import           Data.Function             ((&))
-import qualified Data.Map                  as Map
-import           Data.Monoid               ((<>))
-import           Data.Proxy                (Proxy (..))
-import           Data.Text                 (Text)
-import qualified Data.Text                 as T
-import           GHC.Exts                  (IsString (..))
-import           GHC.Generics              (Generic)
-import           Network.HTTP.Client       (Manager, defaultManagerSettings,
-                                            newManager)
-import           Network.HTTP.Types.Method (methodOptions)
-import qualified Network.Wai.Handler.Warp  as Warp
-import           Servant                   (ServantErr, serve)
+import           Control.Monad.Reader               (ReaderT (..))
+import           Control.Monad.Trans.Either         (EitherT (..))
+import           Control.Monad.Trans.Except         (ExceptT (..))
+import           Data.Aeson                         (Value)
+import           Data.Coerce                        (coerce)
+import           Data.Function                      ((&))
+import qualified Data.Map                           as Map
+import           Data.Monoid                        ((<>))
+import           Data.Proxy                         (Proxy (..))
+import           Data.Text                          (Text)
+import qualified Data.Text                          as T
+import           GHC.Exts                           (IsString (..))
+import           GHC.Generics                       (Generic)
+import           Network.HTTP.Client                (Manager,
+                                                     defaultManagerSettings,
+                                                     newManager)
+import           Network.HTTP.Types.Method          (methodOptions)
+import qualified Network.Wai.Handler.Warp           as Warp
+import           Servant                            (ServantErr, serve)
 import           Servant.API
-import           Servant.API.Verbs         (StdMethod (..), Verb)
-import           Servant.Client            (BaseUrl (..), Scheme (Http),
-                                            ServantError, client)
+import           Servant.API.Verbs                  (StdMethod (..), Verb)
+import           Servant.Client                     (BaseUrl (..),
+                                                     Scheme (Http),
+                                                     ServantError, client)
+import           Servant.Client.Internal.HttpClient (ClientM (..))
+import           Servant.Server                     (Handler (..))
 import           Web.HttpApiData
 
 

@@ -25,12 +25,9 @@ cabal-version:       >=1.10
 
 
 library
-  exposed-modules: FECExplore.Data.HouseRaces
-  -- other-modules:
-  -- other-extensions:
+  exposed-modules: ExploreFEC.Data.HouseRaces
   build-depends:       base >=4.11 && <4.12
                      , aeson
-                     , swagger2
                      , lens
                      , http-api-data
                      , http-client >= 0.5.12

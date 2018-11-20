@@ -6,14 +6,16 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
-module FECExplore.Data.HouseRaces where
+module ExploreFEC.Data.HouseRaces where
 
 import           Servant.API
 import           Servant.Client
 
+import           Data.Text               (Text)
 import           Network.HTTP.Client     (Manager, defaultManagerSettings,
-                                          newManager)
+                                          managerModifyRequest, newManager)
 import           Network.HTTP.Client.TLS (tlsManagerSettings)
+import qualified OpenFEC.QueryTypes      as QT
 import           Web.HttpApiData         (ToHttpApiData (..))
 
 {-
@@ -30,13 +32,27 @@ import           GHC.TypeLits            (KnownSymbol, Symbol)
 -}
 
 import qualified OpenFEC.API             as FEC
-import qualified OpenFEC.Types           as FEC
+--import qualified OpenFEC.Types              as FEC
+
+
 
 testHouseRaces :: IO ()
 testHouseRaces = do
-  let apiKey = "jjt0sf4z7FVpSAXoTndlnLKl0sDZUFcf3PQjpXrW"
-  manager <- newManager tlsManagerSettings
+  let apiKey :: QT.APIKey = "jjt0sf4z7FVpSAXoTndlnLKl0sDZUFcf3PQjpXrW"
+      raceTypes = [QT.House]
+      parties = [QT.Democrat, QT.Republican, QT.Green]
+      electionYears = [2018]
+      candidatesQuery = FEC.getCandidates apiKey parties raceTypes electionYears
+      managerSettings = tlsManagerSettings { managerModifyRequest = \req -> print req >> return req }
+  manager <- newManager managerSettings
+  let clientEnv = mkClientEnv manager (BaseUrl Https "api.open.fec.gov" 443 "/v1")
+  result <- runClientM candidatesQuery clientEnv
+  case result of
+    Left err   -> putStrLn $ "Query returned an error: " ++ show err
+    Right json -> putStrLn $ show json
   return ()
+
+
 {-  res <- runClientM getSwagger (mkClientEnv manager (BaseUrl Https "api.open.fec.gov" 443 ""))
   case res of
     Left err       -> putStrLn $ "Error: " ++ show err

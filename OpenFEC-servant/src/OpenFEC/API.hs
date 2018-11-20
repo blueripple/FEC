@@ -1,49 +1,55 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveGeneric             #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE KindSignatures            #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeOperators             #-}
 module OpenFEC.API where
 
 
-import           Servant.API
+import           Servant
+import           Servant.API.Generic
 import           Servant.Client
---import           Servant.Common.Req
+import           Servant.Client.Generic
 
-import           Network.HTTP.Client     (Manager, defaultManagerSettings,
-                                          newManager)
-import           Network.HTTP.Client.TLS (tlsManagerSettings)
-import           Web.HttpApiData         (ToHttpApiData (..))
+import           Control.Exception      (throwIO)
+import qualified Data.Aeson             as A
+import           Data.Text              (Text)
 
---import           Control.Error       (EitherT)
-import           Control.Lens
-import           Control.Monad           ((>>=))
-import           Data.Aeson              (FromJSON)
-import qualified Data.Aeson              as A
-import           Data.Maybe              (maybe)
-import           Data.Monoid             ((<>))
-import           Data.Proxy              (Proxy (Proxy))
-import qualified Data.Swagger            as SWAG
-import qualified Data.Text               as T
-import           GHC.TypeLits            (KnownSymbol, Symbol)
+import qualified OpenFEC.QueryTypes     as QT
 
+data FEC_Routes route = FEC_Routes
+  {
+    _candidates :: route :- "candidates" :> QueryParam "api_key" Text :> QueryParams "party" Text :> QueryParams "office" Text :> QueryParams "election_year" Int :> Get '[JSON] A.Value
+  }
+  deriving (Generic)
 
-type FEC_API = "swagger" :> Get '[JSON] SWAG.Swagger
-  :<|> "candidates" :> QueryParam "api_key" String :> QueryParam "party" [Text] :> QueryParam "office" [Text] :> QueryParam "election_year" [Int] :> Get '[JSON] A.Value
+--fecApi :: Proxy (ToServantApi FEC_Routes)
+--fecApi = genericApi (Proxy :: Proxy FEC_Routes)
 
-getSwagger :: ClientM SWAG.Swagger
-getCandidates :: APIKey -> Maybe [String] -> Maybe [String] -> Maybe [Int] -> ClientM A.Value
-getSwagger :<|> getCandidates = client fecAPI
+fecClients :: FEC_Routes (AsClientT ClientM)
+fecClients = genericClient
 
+getCandidates :: QT.APIKey -> [QT.Party] -> [QT.Office] -> [QT.ElectionYear] -> ClientM A.Value
+getCandidates apiKey parties offices years =
+  let ttql = QT.toTextQueryList
+  in (_candidates fecClients) (Just apiKey) (ttql parties) (ttql offices) years
+
+{-
 testCandidates :: IO ()
 testCandidates = do
-  let getHouseDems = getCandidates "jjt0sf4z7FVpSAXoTndlnLKl0sDZUFcf3PQjpXrW" 
+  let apiKey = "jjt0sf4z7FVpSAXoTndlnLKl0sDZUFcf3PQjpXrW"
+      races = toTextQueryList [House]
+      parties = toTextQueryList [Democrat, Republican]
+      years = [2016]
   manager <- newManager tlsManagerSettings
-  res <- runClientM getHoueDems (mkClientEnv manager (BaseUrl Https "api.open.fec.gov" 443 ""))
-  
+  res <- runClientM getHouseDems (mkClientEnv manager (BaseUrl Https "api.open.fec.gov" 443 "/v1"))
+-}
+
 
 
 

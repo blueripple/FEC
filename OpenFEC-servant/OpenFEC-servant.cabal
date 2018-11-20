@@ -19,6 +19,7 @@ library
   exposed-modules:
                   OpenFEC.Types
                 , OpenFEC.API
+                , OpenFEC.QueryTypes
   -- other-modules:
   -- other-extensions:
   build-depends:       base >=4.11 && <4.12
@@ -27,8 +28,9 @@ library
                      , containers
                      , network-uri
                      , servant
-                     , megaparsec
+--                     , megaparsec
                      , http-api-data
+                     , servant-client-core
                      , servant-client
                      , servant-server
                      , servant

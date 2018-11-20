@@ -1,8 +1,8 @@
 module Main where
 
-import           Loaders.Swagger
+import           ExploreFEC.Data.HouseRaces
 
 main :: IO ()
-main = testSwagger
+main = testHouseRaces
 
 

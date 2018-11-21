@@ -28,7 +28,9 @@ library
                      , containers
                      , network-uri
                      , servant
---                     , megaparsec
+                     , lens
+                     , lens-aeson
+                     , vector
                      , http-api-data
                      , servant-client-core
                      , servant-client

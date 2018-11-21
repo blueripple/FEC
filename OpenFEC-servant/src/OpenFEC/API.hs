@@ -19,37 +19,33 @@ import           Servant.Client.Generic
 import           Control.Exception      (throwIO)
 import qualified Data.Aeson             as A
 import           Data.Text              (Text)
+import           Data.Vector            (Vector, empty)
 
 import qualified OpenFEC.QueryTypes     as QT
+import           OpenFEC.Types          (Candidate, candidateFromResultJSON)
+
+baseUrl = BaseUrl Https "api.open.fec.gov" 443 "/v1"
 
 data FEC_Routes route = FEC_Routes
   {
-    _candidates :: route :- "candidates" :> QueryParam "api_key" Text :> QueryParams "party" Text :> QueryParams "office" Text :> QueryParams "election_year" Int :> Get '[JSON] A.Value
+    _candidates :: route :- "candidates" :> QueryParam "api_key" Text :> QueryParams "office" Text :> QueryParams "party" Text :> QueryParams "election_year" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] QT.Page
   }
   deriving (Generic)
-
---fecApi :: Proxy (ToServantApi FEC_Routes)
---fecApi = genericApi (Proxy :: Proxy FEC_Routes)
 
 fecClients :: FEC_Routes (AsClientT ClientM)
 fecClients = genericClient
 
-getCandidates :: QT.APIKey -> [QT.Party] -> [QT.Office] -> [QT.ElectionYear] -> ClientM A.Value
-getCandidates apiKey parties offices years =
+-- specific useful queries
+
+getCandidatesPage :: [QT.Office] -> [QT.Party] -> [QT.ElectionYear] -> QT.PageNumber -> ClientM QT.Page
+getCandidatesPage offices parties years page =
   let ttql = QT.toTextQueryList
-  in (_candidates fecClients) (Just apiKey) (ttql parties) (ttql offices) years
+  in (_candidates fecClients) (Just QT.fecApiKey) (ttql offices) (ttql parties) years (Just QT.fecMaxPerPage) (Just page)
 
-{-
-testCandidates :: IO ()
-testCandidates = do
-  let apiKey = "jjt0sf4z7FVpSAXoTndlnLKl0sDZUFcf3PQjpXrW"
-      races = toTextQueryList [House]
-      parties = toTextQueryList [Democrat, Republican]
-      years = [2016]
-  manager <- newManager tlsManagerSettings
-  res <- runClientM getHouseDems (mkClientEnv manager (BaseUrl Https "api.open.fec.gov" 443 "/v1"))
--}
-
+getCandidates :: [QT.Office] -> [QT.Party] -> [QT.ElectionYear] -> ClientM (Maybe (Vector Candidate))
+getCandidates offices parties years =
+    let getOnePage = getCandidatesPage offices parties years
+    in QT.getAllPages QT.SkipFailed getOnePage candidateFromResultJSON
 
 
 

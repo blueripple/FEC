@@ -32,7 +32,7 @@ library
                      , lens-aeson
                      , vector
                      , http-api-data
-                     , servant-client-core
+                     , servant-client-core >= 0.15
                      , servant-client
                      , servant-server
                      , servant

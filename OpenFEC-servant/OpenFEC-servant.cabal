@@ -32,10 +32,13 @@ library
                      , lens-aeson
                      , vector
                      , http-api-data
+                     , scientific
                      , servant-client-core >= 0.15
                      , servant-client
                      , servant-server
                      , servant
+                     , tabl
+                     , time
                      , warp
                      , transformers
                      , mtl

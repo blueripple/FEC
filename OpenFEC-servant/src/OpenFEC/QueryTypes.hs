@@ -69,8 +69,8 @@ instance A.FromJSON Page where
 
 data FailureStyle = SkipFailed | NoneIfAnyFailed
 
-getAllPages :: forall m b.Monad m => FailureStyle -> (PageNumber -> m Page) -> (A.Value -> Maybe b) -> m (Maybe (V.Vector b))
-getAllPages fs getPage decodeOne = nextPage (return []) 1 where
+getAllPages :: forall m b.Monad m => Maybe Int -> FailureStyle -> (PageNumber -> m Page) -> (A.Value -> Maybe b) -> m (Maybe (V.Vector b))
+getAllPages maxPagesM fs getPage decodeOne = nextPage (return []) 1 where
   finalResult vsM =
     let vM = V.concat <$> vsM
     in case fs of
@@ -81,5 +81,5 @@ getAllPages fs getPage decodeOne = nextPage (return []) 1 where
     let totalPages = pages $ pagination page
         decodedM :: Maybe (V.Vector (Maybe b)) = fmap decodeOne <$> (results page ^? _Array) -- Maybe (Vector (Maybe b))
         vsM' = (++) <$> vsM <*> fmap pure decodedM
-    if (n < 3) then nextPage vsM' (n+1) else return (finalResult vsM') -- 3 here for testing!!
+    if (n < maybe totalPages id maxPagesM) then nextPage vsM' (n+1) else return (finalResult vsM') -- 3 here for testing!!
 

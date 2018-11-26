@@ -27,6 +27,7 @@ fecMaxPerPage :: Int
 fecMaxPerPage = 100
 
 type ElectionYear = Int
+type ElectionCycle = Int
 
 data Office = House | Senate | President
 instance ToJSON Office where

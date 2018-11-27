@@ -24,6 +24,7 @@ library
   -- other-extensions:
   build-depends:       base >=4.11 && <4.12
                      , aeson
+                     , bytestring
                      , text
                      , containers
                      , network-uri
@@ -32,6 +33,7 @@ library
                      , lens-aeson
                      , vector
                      , http-api-data
+                     , safe-exceptions
                      , scientific
                      , servant-client-core >= 0.15
                      , servant-client

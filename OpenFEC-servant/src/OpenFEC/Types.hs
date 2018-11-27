@@ -169,9 +169,9 @@ data Disbursement = Disbursement
   , __disbursement_purpose_Category :: Text
   }
 
-makeLenses ''Disbursment
+makeLenses ''Disbursement
 
-disbursementFromResultJSON :: A.Value -> Disbursement
+disbursementFromResultJSON :: A.Value -> Maybe Disbursement
 disbursementFromResultJSON val =
   let ddM = val ^? key "disbursement_date" . _JSON
       daM = val ^? key "disbursement_amount" . _Number
@@ -184,7 +184,7 @@ disbursementHeaders = ["Date", "Amount", "Purpose"]
 disbursementAligns = [TT.AlignLeft, TT.AlignRight, TT.AlignLeft]
 
 disbursementToRow :: Disbursement -> [Text]
-disbursementToRow (Disbursement d a pc)  = [ localTimeAsText d, sciAsMoney a, pc]
+disbursementToRow (Disbursement d a pc)  = [ localTimeToText d, sciAsMoney a, pc]
 
 disbursementTable :: (Functor t, Foldable t) => t Disbursement -> Text
 disbursementTable x =

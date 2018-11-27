@@ -22,14 +22,15 @@ main = do
 --      query = FEC.getCandidates raceType parties electionYears
 --      query = FEC.getFilings "H8NY11113" True [2018]
 --      query = FEC.getCommittees "H8NY11113" []
-      query = FEC.getReports "C00652248" [] [] []
-      managerSettings = tlsManagerSettings { managerModifyRequest = \req -> print req >> return req }
+--      query = FEC.getReports "C00652248" [] [] []
+      query = FEC.getDisbursements "C00652248" 2018
+      managerSettings = tlsManagerSettings --{ managerModifyRequest = \req -> print req >> return req }
   manager <- newManager managerSettings
   let clientEnv = mkClientEnv manager FEC.baseUrl
   result <- runClientM query clientEnv
   case result of
-    Left err          -> putStrLn $ "Query returned an error: " ++ show err
-    Right reportM -> putStrLn $ maybe "Query Error/No Data" (T.unpack . FEC.reportTable) reportM
+    Left err -> putStrLn $ "Query returned an error: " ++ show err
+    Right x  -> putStrLn $ (T.unpack . FEC.disbursementTable) x
   return ()
 
 

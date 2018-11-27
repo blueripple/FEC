@@ -4,17 +4,21 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module OpenFEC.QueryTypes where
 
+import           Control.Exception.Safe (MonadThrow, throw)
 import           Control.Lens
-import           Control.Monad    (join, sequence)
-import           Data.Aeson       (FromJSON, ToJSON)
-import qualified Data.Aeson       as A
+import           Control.Monad          (join, sequence)
+import           Data.Aeson             (FromJSON, ToJSON)
+import qualified Data.Aeson             as A
 import           Data.Aeson.Lens
-import qualified Data.Aeson.Types as A
-import           Data.Maybe       (catMaybes, isJust)
-import           Data.Monoid      ((<>))
-import           Data.Text        (Text)
-import qualified Data.Vector      as V
-import           GHC.Generics     (Generic)
+import qualified Data.Aeson.Types       as A
+import           Data.Maybe             (catMaybes, isJust)
+import           Data.Monoid            ((<>))
+import           Data.Text              (Text, unpack)
+import qualified Data.Vector            as V
+import           GHC.Generics           (Generic)
+import           Text.Read              (readMaybe)
+
+import           Servant
 
 toTextQueryList :: ToJSON a => [a] -> [Text]
 toTextQueryList = catMaybes . fmap (A.parseMaybe A.parseJSON . A.toJSON)
@@ -71,55 +75,57 @@ instance A.FromJSON Page where
 data FailureStyle = SkipFailed | NoneIfAnyFailed
 
 getAllPages :: forall m b.
-  Monad m =>
+  (Monad m, MonadThrow m) =>
   Maybe Int ->
   FailureStyle ->
   (PageNumber -> m Page) ->
   (A.Value -> Maybe b) ->
-  m (Maybe (V.Vector b))
+  m (V.Vector b)
 getAllPages maxPagesM fs getPage decodeOne = nextPage [] 1 where
   finalResult vs =
     let v = V.concat vs
     in case fs of
-      NoneIfAnyFailed -> sequence v
-      SkipFailed      -> Just $ V.mapMaybe id v
+      NoneIfAnyFailed -> case (sequence v) of
+        Nothing -> throw $ err417 { errBody = "Failure decoding one or more items in getAllPages." }
+        Just v -> return v
+      SkipFailed      -> return $ V.mapMaybe id v
   nextPage vs n = do
     page <- getPage n
     let totalPages = pages $ pagination page
         decoded :: V.Vector (Maybe b) = decodeOne <$> results page -- Vector (Maybe b)
         vs' = vs ++ [decoded]
-    if (n < maybe totalPages id maxPagesM) then nextPage vs' (n+1) else return (finalResult vs') -- 3 here for testing!!
-
-
+    if (n < maybe totalPages id maxPagesM) then nextPage vs' (n+1) else finalResult vs'
 
 data LastIndex a = LastIndex { lastIndex :: Int, lastOther :: a }
 
 data IndexedPage a = IndexedPage { lastIndexInfo :: LastIndex a, indexedResults :: V.Vector A.Value }
 
-getIndexedPage :: FromJSON a => Text -> A.Value -> Maybe (IndexedPage a)
+getIndexedPage :: (FromJSON a, ToJSON a) => Text -> A.Value -> Maybe (IndexedPage a)
 getIndexedPage k val =
-  let lastIndexM = val ^? key "pagination" . key "last_indexes" . key "last_index" . _Integer
+  let lastIndexM = join $ readMaybe . unpack <$> val ^? key "pagination" . key "last_indexes" . key "last_index" . _String
       lastOtherM = val ^? key "pagination" . key "last_indexes" . key k . _JSON
       resultsM = val ^? key "results" . _Array
       lastIndexInfoM = LastIndex <$> lastIndexM <*> lastOtherM
-  in Index <$> lastIndexInfoM <*> resultsM
+  in IndexedPage <$> lastIndexInfoM <*> resultsM
 
-getAllIndexedPages :: forall m a b. (Monad m, FromJSON a) =>
+getAllIndexedPages :: forall m a b. (Monad m, MonadThrow m, FromJSON a, ToJSON a) =>
                       Maybe Int ->
                       FailureStyle ->
                       (Maybe (LastIndex a) -> m (IndexedPage a)) ->
                       (A.Value -> Maybe b) ->
-                      m (Maybe (V.Vector b))
-getAllIndexedPages maxPagesM fs getPage decodeOne = nextPage [] Nothing where
+                      m (V.Vector b)
+getAllIndexedPages maxPagesM fs getPage decodeOne = nextPage [] Nothing 0 where
   finalResult vs =
     let v = V.concat vs
     in case fs of
-      NoneIfAnyFailed -> sequence v
-      SkipFailed      -> Just $ V.mapMaybe id v
-  nextPage vs lastIndexM = do
+      NoneIfAnyFailed -> case (sequence v) of
+        Nothing -> throw $ err417 { errBody = "Failure decoding one or more items in getAllIndexedPages." }
+        Just v -> return v
+      SkipFailed      -> return $ V.mapMaybe id v
+  nextPage vs lastIndexM n = do
     indexedPage <- getPage lastIndexM
     let decoded = decodeOne <$> (indexedResults indexedPage)
-        finished = V.null decoded
+        finished = (V.null decoded) || (maybe False (n >=) maxPagesM)
         vs' = vs ++ [decoded]
-    if (not finished) then nextPage vs' (Just $ lastIndex indexedPage) else return (finalResult vs')
+    if (not finished) then nextPage vs' (Just $ lastIndexInfo indexedPage) (n + 1) else finalResult vs'
 

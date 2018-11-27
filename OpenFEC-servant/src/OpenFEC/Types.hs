@@ -218,23 +218,23 @@ instance A.FromJSON SpendingIntention where
       "O" -> return Oppose
       _   -> A.typeMismatch "SpendingIntention" o
 
-data Expenditure = Expenditure
+data IndExpenditure = IndExpenditure
   {
-    __expenditure_date                    :: LocalTime
-  , __expenditure_amount                  :: Amount
-  , _expenditure_support_oppose_indicator :: SpendingIntention
-  , _expenditure_office_total_ytd         :: Amount
-  , _expenditure_category_code_full       :: Maybe Text
-  , __expenditure_description             :: Text
-  , _expenditure_candidate_ids            :: Text
-  , _expenditure_committee_id             :: CommitteeID
-  , _expenditure_committee_name           :: Text
+    _indExpenditure_date                     :: LocalTime
+  , _indExpenditure_amount                   :: Amount
+  , _indExpenditure_support_oppose_indicator :: SpendingIntention
+  , _indExpenditure_office_total_ytd         :: Amount
+  , _indExpenditure_category_code_full       :: Maybe Text
+  , _indExpenditure_description              :: Text
+  , _indExpenditure_candidate_ids            :: Text
+  , _indExpenditure_committee_id             :: CommitteeID
+  , _indExpenditure_committee_name           :: Text
   }
 
-makeLenses ''Expenditure
+makeLenses ''IndExpenditure
 
-expenditureFromResultJSON :: A.Value -> Maybe Expenditure
-expenditureFromResultJSON val =
+indExpenditureFromResultJSON :: A.Value -> Maybe IndExpenditure
+indExpenditureFromResultJSON val =
   let edM = val ^? key "expenditure_date" . _JSON
       eaM = val ^? key "expenditure_amount" . _Number
       esoM = val ^? key "support_oppose_indicator" . _JSON
@@ -242,22 +242,22 @@ expenditureFromResultJSON val =
       eccfM = val ^? key "category_code_full" . _String
       edescM = val ^? key "expenditure_description" . _String
       ecaiM = val ^? key "candidate" . key "candidate_id" . _String
-      ecoiM = val ^? key "committee" . key "committee_id" . _String
+      ecoiM = val ^? key "committee_id" . _String
       ecnM = val ^? key "committee" . key "name" . _String
-  in Expenditure <$> edM <*> eaM <*> esoM <*> eotyM <*> (Just eccfM) <*> edescM <*> ecaiM <*> ecoiM <*> ecnM
+  in IndExpenditure <$> edM <*> eaM <*> esoM <*> eotyM <*> (Just eccfM) <*> edescM <*> ecaiM <*> ecoiM <*> ecnM
 
 
-expenditureHeaders :: [Text]
-expenditureHeaders = ["Date", "Amount", "Intention", "YTD", "Category", "Description", "Candidate ID", "Committee ID", "Committee Name"]
+indExpenditureHeaders :: [Text]
+indExpenditureHeaders = ["Date", "Amount", "Intention", "YTD", "Category", "Description", "Candidate ID", "Committee ID", "Committee Name"]
 
-expenditureAligns = [TT.AlignLeft, TT.AlignRight, TT.AlignLeft, TT.AlignRight, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft]
+indExpenditureAligns = [TT.AlignLeft, TT.AlignRight, TT.AlignLeft, TT.AlignRight, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft]
 
-expenditureToRow :: Expenditure -> [Text]
-expenditureToRow (Expenditure d a so ytd ccf ed cais coi cn)  = [localTimeToText d, amountToText a, pack (show so), amountToText ytd, maybe "N/A" id ccf, ed, cais, coi, cn]
+indExpenditureToRow :: IndExpenditure -> [Text]
+indExpenditureToRow (IndExpenditure d a so ytd ccf ed cais coi cn)  = [localTimeToText d, amountToText a, pack (show so), amountToText ytd, maybe "N/A" id ccf, ed, cais, coi, cn]
 
-expenditureTable :: (Functor t, Foldable t) => t Expenditure -> Text
-expenditureTable x =
-  let ds = F.toList $ expenditureToRow <$> x
-  in TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone expenditureAligns (expenditureHeaders : ds)
+indExpenditureTable :: (Functor t, Foldable t) => t IndExpenditure -> Text
+indExpenditureTable x =
+  let ds = F.toList $ indExpenditureToRow <$> x
+  in TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone indExpenditureAligns (indExpenditureHeaders : ds)
 
 

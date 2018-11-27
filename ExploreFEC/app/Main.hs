@@ -31,7 +31,7 @@ main = do
   result <- runClientM query clientEnv
   case result of
     Left err -> putStrLn $ "Query returned an error: " ++ show err
-    Right x  -> putStrLn $ (T.unpack . FEC.expenditureTable) x
+    Right x  -> putStrLn $ (T.unpack . FEC.indExpenditureTable) x
   return ()
 
 

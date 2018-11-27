@@ -111,10 +111,10 @@ getIndependentExpendituresByCommitteeIPage cid cycles liM leM = do
     Nothing -> throw $ err417 { errBody = "Decoding Error (Aeson.Value -> FEC.IndexedPage LocalTime) in getIndependentExpendituresIPageByCandidate." }
     Just ip -> return ip
 
-getIndependentExpendituresByCandidate :: FEC.CandidateID -> [FEC.ElectionYear] -> ClientM (Vector FEC.Expenditure)
+getIndependentExpendituresByCandidate :: FEC.CandidateID -> [FEC.ElectionYear] -> ClientM (Vector FEC.IndExpenditure)
 getIndependentExpendituresByCandidate cid cycles =
   let getOnePage x = case x of
         Nothing -> getIndependentExpendituresByCandidateIPage cid cycles Nothing Nothing
         Just (FEC.LastIndex li led) -> getIndependentExpendituresByCandidateIPage cid cycles (Just li) (Just led)
-  in FEC.getAllIndexedPages Nothing FEC.SkipFailed getOnePage FEC.expenditureFromResultJSON
+  in FEC.getAllIndexedPages Nothing FEC.SkipFailed getOnePage FEC.indExpenditureFromResultJSON
 

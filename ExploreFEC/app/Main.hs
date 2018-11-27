@@ -23,14 +23,15 @@ main = do
 --      query = FEC.getFilings "H8NY11113" True [2018]
 --      query = FEC.getCommittees "H8NY11113" []
 --      query = FEC.getReports "C00652248" [] [] []
-      query = FEC.getDisbursements "C00652248" 2018
+--      query = FEC.getDisbursements "C00652248" 2018
+      query = FEC.getIndependentExpendituresByCandidate "H8NY11113" []
       managerSettings = tlsManagerSettings --{ managerModifyRequest = \req -> print req >> return req }
   manager <- newManager managerSettings
   let clientEnv = mkClientEnv manager FEC.baseUrl
   result <- runClientM query clientEnv
   case result of
     Left err -> putStrLn $ "Query returned an error: " ++ show err
-    Right x  -> putStrLn $ (T.unpack . FEC.disbursementTable) x
+    Right x  -> putStrLn $ (T.unpack . FEC.expenditureTable) x
   return ()
 
 

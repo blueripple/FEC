@@ -42,6 +42,7 @@ library
                      , tabl
                      , time
                      , warp
+                     , http-api-data
                      , transformers
                      , mtl
                      , http-client

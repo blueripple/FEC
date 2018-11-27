@@ -36,6 +36,7 @@ data FEC_Routes route = FEC_Routes
   , _committees :: route :- "candidate" :> Capture "candidate_id" Text :> "committees" :> QueryParam "api_key" Text :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
   , _reports :: route :- "committee" :> Capture "committee_id" Text :> "reports" :> QueryParam "api_key" Text :> QueryParams "report_type" Text :> QueryParams "year" Int :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
   , _disbursements :: route :- "schedules" :> "schedule_b" :> QueryParam "api_key" Text :> QueryParam "committee_id" Text :> QueryParam "two_year_transaction_period" Int :> QueryParam "per_page" Int :> QueryParam "last_index" Int :> QueryParam "last_disbursement_date" LocalTime :> Get '[JSON] A.Value
+  , _independent_expenditures :: route :- "schedules" :> "schedule_e" :> QueryParam "api_key" Text :> QueryParam "candidate_id" Text :> QueryParam "committee_id" Text :> QueryParams "cycle" Int :> QueryParam "last_index" Int :> QueryParam "last_expenditure_date" LocalTime :> Get '[JSON] A.Value
   }
   deriving (Generic)
 
@@ -91,4 +92,29 @@ getDisbursements cid electionYear =
   let getOnePage x = case x of
         Nothing -> getDisbursementsIPage cid electionYear Nothing Nothing
         Just (FEC.LastIndex li ldd) -> getDisbursementsIPage cid electionYear (Just li) (Just ldd)
-  in FEC.getAllIndexedPages (Just 2) FEC.SkipFailed getOnePage FEC.disbursementFromResultJSON
+  in FEC.getAllIndexedPages (Just 5) FEC.SkipFailed getOnePage FEC.disbursementFromResultJSON
+
+
+getIndependentExpendituresByCandidateIPage :: FEC.CandidateID -> [FEC.ElectionYear] -> Maybe Int -> Maybe LocalTime -> ClientM (FEC.IndexedPage LocalTime)
+getIndependentExpendituresByCandidateIPage cid cycles liM leM = do
+  json <- (_independent_expenditures fecClients) (Just FEC.fecApiKey) (Just cid) Nothing cycles liM leM
+  let parsedM = FEC.getIndexedPage "last_expenditure_date" json
+  case parsedM of
+    Nothing -> throw $ err417 { errBody = "Decoding Error (Aeson.Value -> FEC.IndexedPage LocalTime) in getIndependentExpendituresIPageByCandidate." }
+    Just ip -> return ip
+
+getIndependentExpendituresByCommitteeIPage :: FEC.CommitteeID -> [FEC.ElectionYear] -> Maybe Int -> Maybe LocalTime -> ClientM (FEC.IndexedPage LocalTime)
+getIndependentExpendituresByCommitteeIPage cid cycles liM leM = do
+  json <- (_independent_expenditures fecClients) (Just FEC.fecApiKey) Nothing (Just cid) cycles liM leM
+  let parsedM = FEC.getIndexedPage "last_expenditure_date" json
+  case parsedM of
+    Nothing -> throw $ err417 { errBody = "Decoding Error (Aeson.Value -> FEC.IndexedPage LocalTime) in getIndependentExpendituresIPageByCandidate." }
+    Just ip -> return ip
+
+getIndependentExpendituresByCandidate :: FEC.CandidateID -> [FEC.ElectionYear] -> ClientM (Vector FEC.Expenditure)
+getIndependentExpendituresByCandidate cid cycles =
+  let getOnePage x = case x of
+        Nothing -> getIndependentExpendituresByCandidateIPage cid cycles Nothing Nothing
+        Just (FEC.LastIndex li led) -> getIndependentExpendituresByCandidateIPage cid cycles (Just li) (Just led)
+  in FEC.getAllIndexedPages Nothing FEC.SkipFailed getOnePage FEC.expenditureFromResultJSON
+

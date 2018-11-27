@@ -98,15 +98,16 @@ getAllPages maxPagesM fs getPage decodeOne = nextPage [] 1 where
 
 data LastIndex a = LastIndex { lastIndex :: Int, lastOther :: a }
 
-data IndexedPage a = IndexedPage { lastIndexInfo :: LastIndex a, indexedResults :: V.Vector A.Value }
+data IndexedPage a = IndexedPage { lastIndexInfo :: LastIndex a, resultsPerPage :: Int, indexedResults :: V.Vector A.Value }
 
 getIndexedPage :: (FromJSON a, ToJSON a) => Text -> A.Value -> Maybe (IndexedPage a)
 getIndexedPage k val =
   let lastIndexM = join $ readMaybe . unpack <$> val ^? key "pagination" . key "last_indexes" . key "last_index" . _String
       lastOtherM = val ^? key "pagination" . key "last_indexes" . key k . _JSON
+      perPageM = val ^? key "pagination" . key "per_page" . _Integral
       resultsM = val ^? key "results" . _Array
       lastIndexInfoM = LastIndex <$> lastIndexM <*> lastOtherM
-  in IndexedPage <$> lastIndexInfoM <*> resultsM
+  in IndexedPage <$> lastIndexInfoM <*> perPageM <*> resultsM
 
 getAllIndexedPages :: forall m a b. (Monad m, MonadThrow m, FromJSON a, ToJSON a) =>
                       Maybe Int ->
@@ -114,7 +115,7 @@ getAllIndexedPages :: forall m a b. (Monad m, MonadThrow m, FromJSON a, ToJSON a
                       (Maybe (LastIndex a) -> m (IndexedPage a)) ->
                       (A.Value -> Maybe b) ->
                       m (V.Vector b)
-getAllIndexedPages maxPagesM fs getPage decodeOne = nextPage [] Nothing 0 where
+getAllIndexedPages maxPagesM fs getPage decodeOne = nextPage [] Nothing 1 where
   finalResult vs =
     let v = V.concat vs
     in case fs of
@@ -124,8 +125,9 @@ getAllIndexedPages maxPagesM fs getPage decodeOne = nextPage [] Nothing 0 where
       SkipFailed      -> return $ V.mapMaybe id v
   nextPage vs lastIndexM n = do
     indexedPage <- getPage lastIndexM
+    let indexInfo = lastIndexInfo indexedPage
     let decoded = decodeOne <$> (indexedResults indexedPage)
-        finished = (V.null decoded) || (maybe False (n >=) maxPagesM)
-        vs' = vs ++ [decoded]
-    if (not finished) then nextPage vs' (Just $ lastIndexInfo indexedPage) (n + 1) else finalResult vs'
+        finished = (V.length decoded < resultsPerPage indexedPage) || (maybe False (n >=) maxPagesM)
+        vs' = decoded : vs
+    if (not finished) then nextPage vs' (Just indexInfo) (n + 1) else finalResult (reverse vs')
 

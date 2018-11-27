@@ -63,24 +63,63 @@ data PageInfo = PageInfo { pages :: PageNumber, count :: Int, page :: PageNumber
 instance A.FromJSON PageInfo where
   parseJSON = A.genericParseJSON A.defaultOptions
 
-data Page = Page { pagination :: PageInfo , results :: A.Value } deriving (Generic, Show)
+data Page = Page { pagination :: PageInfo , results :: V.Vector A.Value } deriving (Generic, Show)
 
 instance A.FromJSON Page where
   parseJSON = A.genericParseJSON A.defaultOptions
 
 data FailureStyle = SkipFailed | NoneIfAnyFailed
 
-getAllPages :: forall m b.Monad m => Maybe Int -> FailureStyle -> (PageNumber -> m Page) -> (A.Value -> Maybe b) -> m (Maybe (V.Vector b))
-getAllPages maxPagesM fs getPage decodeOne = nextPage (return []) 1 where
-  finalResult vsM =
-    let vM = V.concat <$> vsM
+getAllPages :: forall m b.
+  Monad m =>
+  Maybe Int ->
+  FailureStyle ->
+  (PageNumber -> m Page) ->
+  (A.Value -> Maybe b) ->
+  m (Maybe (V.Vector b))
+getAllPages maxPagesM fs getPage decodeOne = nextPage [] 1 where
+  finalResult vs =
+    let v = V.concat vs
     in case fs of
-      NoneIfAnyFailed -> join $ sequence <$> vM
-      SkipFailed      -> V.mapMaybe id <$> vM
-  nextPage vsM n = do
+      NoneIfAnyFailed -> sequence v
+      SkipFailed      -> Just $ V.mapMaybe id v
+  nextPage vs n = do
     page <- getPage n
     let totalPages = pages $ pagination page
-        decodedM :: Maybe (V.Vector (Maybe b)) = fmap decodeOne <$> (results page ^? _Array) -- Maybe (Vector (Maybe b))
-        vsM' = (++) <$> vsM <*> fmap pure decodedM
-    if (n < maybe totalPages id maxPagesM) then nextPage vsM' (n+1) else return (finalResult vsM') -- 3 here for testing!!
+        decoded :: V.Vector (Maybe b) = decodeOne <$> results page -- Vector (Maybe b)
+        vs' = vs ++ [decoded]
+    if (n < maybe totalPages id maxPagesM) then nextPage vs' (n+1) else return (finalResult vs') -- 3 here for testing!!
+
+
+
+data LastIndex a = LastIndex { lastIndex :: Int, lastOther :: a }
+
+data IndexedPage a = IndexedPage { lastIndexInfo :: LastIndex a, indexedResults :: V.Vector A.Value }
+
+getIndexedPage :: FromJSON a => Text -> A.Value -> Maybe (IndexedPage a)
+getIndexedPage k val =
+  let lastIndexM = val ^? key "pagination" . key "last_indexes" . key "last_index" . _Integer
+      lastOtherM = val ^? key "pagination" . key "last_indexes" . key k . _JSON
+      resultsM = val ^? key "results" . _Array
+      lastIndexInfoM = LastIndex <$> lastIndexM <*> lastOtherM
+  in Index <$> lastIndexInfoM <*> resultsM
+
+getAllIndexedPages :: forall m a b. (Monad m, FromJSON a) =>
+                      Maybe Int ->
+                      FailureStyle ->
+                      (Maybe (LastIndex a) -> m (IndexedPage a)) ->
+                      (A.Value -> Maybe b) ->
+                      m (Maybe (V.Vector b))
+getAllIndexedPages maxPagesM fs getPage decodeOne = nextPage [] Nothing where
+  finalResult vs =
+    let v = V.concat vs
+    in case fs of
+      NoneIfAnyFailed -> sequence v
+      SkipFailed      -> Just $ V.mapMaybe id v
+  nextPage vs lastIndexM = do
+    indexedPage <- getPage lastIndexM
+    let decoded = decodeOne <$> (indexedResults indexedPage)
+        finished = V.null decoded
+        vs' = vs ++ [decoded]
+    if (not finished) then nextPage vs' (Just $ lastIndex indexedPage) else return (finalResult vs')
 

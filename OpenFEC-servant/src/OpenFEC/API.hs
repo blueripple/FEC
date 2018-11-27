@@ -31,6 +31,7 @@ data FEC_Routes route = FEC_Routes
     _candidates :: route :- "candidates" :> QueryParam "api_key" Text :> QueryParams "candidate_status" Text :> QueryParams "office" Text :> QueryParams "party" Text :> QueryParams "election_year" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
   , _committees :: route :- "candidate" :> Capture "candidate_id" Text :> "committees" :> QueryParam "api_key" Text :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
   , _reports :: route :- "committee" :> Capture "committee_id" Text :> "reports" :> QueryParam "api_key" Text :> QueryParams "report_type" Text :> QueryParams "year" Int :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
+  , _disbursements :: route :- "schedules" :> "schedule_b" :> QueryParam "api_key" Text :> QueryParam "committee_id" Text :> QueryParam "per_page" Int :> QueryParam "last_disbursement_amount" Scientific :> QueryParam "last_index" Int :> GET '[JSON] FEC.IndexedPage  
   }
   deriving (Generic)
 
@@ -65,3 +66,9 @@ getReports :: FEC.CommitteeID -> [Text] -> [FEC.ElectionYear] -> [FEC.ElectionCy
 getReports cid reportTypes reportYears electionCycles =
   let getOnePage = getReportsPage cid reportTypes reportYears electionCycles
   in FEC.getAllPages Nothing FEC.SkipFailed getOnePage  FEC.reportFromResultJSON
+
+getReportsByCandidate :: FEC.CandidateID -> [Text] -> [FEC.ElectionYear] -> [FEC.ElectionCycle] -> ClientM (Maybe (Vector FEC.Report))
+getReportsByCandidate id reportType electionYears electionCycles = do
+  let getFromCommittee (Committee id _ _ _ _) = getReports id reportTypes reportYears electionCycles
+      
+  committeesM <- getCommittees id electionYears

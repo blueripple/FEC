@@ -99,24 +99,6 @@ committeeTable x =
   let cs = F.toList $ committeeToRow <$> x
   in  TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone committeeAligns (committeeHeaders : cs)
 
-data Filing = Filing
-  {
-    _filing_cash_on_hand_beginning         :: Scientific
-  , _filing_cash_on_hand_end               :: Scientific
-  , _filing_committee_type                 :: Text
-  , _filing_committee_id                   :: Text
-  , _filing_document_type                  :: Text
-  , _filing_receipt_date                   :: Day
-  , _filing_report_type                    :: Text
-  , _filing_total_communication_cost       :: Scientific
-  , _filing_total_disbursements            :: Scientific
-  , _filing_total_independent_expenditures :: Scientific
-  , _filing_total_individual_contributions :: Scientific
-  , _filing_total_receipts                 :: Scientific
-  , _filing_update_date                    :: Day
-  } deriving (Generic, Show)
-
-makeLenses ''Filing
 
 sciAsMoney :: Scientific -> Text
 sciAsMoney = pack . formatScientific Fixed (Just 2)
@@ -126,57 +108,6 @@ dayToText = pack . formatTime defaultTimeLocale "%F"
 
 localTimeToText :: LocalTime -> Text
 localTimeToText = pack . formatTime defaultTimeLocale "%F"
-
-filingFromResultJSON :: A.Value -> Maybe Filing
-filingFromResultJSON val =
-  let cohb = val ^? key "cash_on_hand_beginning" . _Number
-      cohe = val ^? key "cash_on_hand_end" . _Number
-      ct = val ^? key "committee_type" . _String
-      ci = val ^? key "committee_id" . _String
-      dt = val ^? key "document_type" . _String
-      rd = val ^? key "receipt_date" . _JSON
-      rt = val ^? key "report_type" . _String
-      ttc = val ^? key "total_communication_cost" . _Number
-      td = val ^? key "total_disbursements" . _Number
-      tie = val ^? key "total_independent_expenditures" . _Number
-      tic = val ^? key "total_individual_contributions" . _Number
-      tr = val ^? key "total_receipts" . _Number
-      ud = val ^? key "update_date" . _JSON
-  in Filing <$> cohb <*> cohe <*> ct <*> ci <*> dt <*> rd <*> rt <*> ttc <*> td <*> tie <*> tic <*> tr <*> ud
-
-filingHeaders :: [Text]
-filingHeaders = ["$ Beginning", "$ End", "committee type", "committee id", "doc type", "receipt date",
-                "report type", "$ communications", "$ disbursements", "$ ind expenditures" ,
-                "$ individual contributions", "$ receipts", "update"]
-
-
-filingAligns = [TT.AlignRight, TT.AlignRight, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft,
-                TT.AlignLeft, TT.AlignRight, TT.AlignRight, TT.AlignRight, TT.AlignRight, TT.AlignRight,
-                TT.AlignLeft]
-
-filingToRow :: Filing -> [Text]
-filingToRow (Filing cohb cohe ct ci dt rd rt ttc td tie tic tr ud) =
-  [
-    sciAsMoney cohb
-  , sciAsMoney cohe
-  , ct
-  , ci
-  , dt
-  , dayToText rd
-  , rt
-  , sciAsMoney ttc
-  , sciAsMoney td
-  , sciAsMoney tie
-  , sciAsMoney tic
-  , sciAsMoney tr
-  , dayToText ud
-  ]
-
-filingTable :: (Functor t, Foldable t) => t Filing -> Text
-filingTable x =
-  let fs = F.toList $ filingToRow <$> x
-  in TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone filingAligns (filingHeaders : fs)
-
 
 data Report = Report
   {
@@ -230,3 +161,32 @@ reportTable :: (Functor t, Foldable t) => t Report -> Text
 reportTable x =
   let fs = F.toList $ reportToRow <$> x
   in TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone reportAligns (reportHeaders : fs)
+
+data Disbursement = Disbursement
+  {
+    __disbursement_date             :: LocalTime
+  , __disbursement_amount           :: Scientific
+  , __disbursement_purpose_Category :: Text
+  }
+
+makeLenses ''Disbursment
+
+disbursementFromResultJSON :: A.Value -> Disbursement
+disbursementFromResultJSON val =
+  let ddM = val ^? key "disbursement_date" . _JSON
+      daM = val ^? key "disbursement_amount" . _Number
+      dpcM = val ^? key "disbursement_purpose_category" . _String
+  in Disbursement <$> ddM <*> daM <*> dpcM
+
+disbursementHeaders :: [Text]
+disbursementHeaders = ["Date", "Amount", "Purpose"]
+
+disbursementAligns = [TT.AlignLeft, TT.AlignRight, TT.AlignLeft]
+
+disbursementToRow :: Disbursement -> [Text]
+disbursementToRow (Disbursement d a pc)  = [ localTimeAsText d, sciAsMoney a, pc]
+
+disbursementTable :: (Functor t, Foldable t) => t Disbursement -> Text
+disbursementTable x =
+  let ds = F.toList $ disbursementToRow <$> x
+  in TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone disbursementAligns (disbursementHeaders : ds)

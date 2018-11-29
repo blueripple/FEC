@@ -8,7 +8,11 @@
 {-# LANGUAGE TypeOperators       #-}
 module ExploreFEC.Data.HouseRaces where
 
-import           Servant.API
+--import           Servant.API
 import           Servant.Client
 
-import           Data.Text
+import qualified Data.Text      as T
+
+import qualified OpenFEC.API    as FEC
+import qualified OpenFEC.Types  as FEC
+

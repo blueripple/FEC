@@ -76,10 +76,10 @@ describeSpending (CandidateSpending c d i p) =
       totalD = sum FEC.disbursement_amount d
       totalP = sum FEC.partyExpenditure_amount p
       (iS,iO) = V.partition (\x -> FEC._indExpenditure_support_oppose_indicator x == FEC.Support) i
-      totalI_support = sum FEC.indExpenditure_amount iS
-      totalI_oppose = sum FEC.indExpenditure_amount iO
+      totalI_support = sum FEC.indExpenditure_amount_from_ytd iS
+      totalI_oppose = sum FEC.indExpenditure_amount_from_ytd iO
       total = totalD + totalP + totalI_support
-  in "For " <> (FEC._candidate_name c) <> " we have "
+  in "For " <> (FEC._candidate_name c) <> " (FEC ID: " <> (FEC._candidate_id c)  <> ") we have "
      <> f (V.length d) <> " disbursements ($ " <> g totalD <> ") and "
      <> f (V.length i) <> " independent expenditures ($" <> g totalI_support <> " in support and $" <> g totalI_oppose <> " in opposition) and "
      <> f (V.length p) <> " party expenditures ($ " <> g totalP <> "). Total: $" <> g total <> " in support and $" <> g totalI_oppose <> " in opposition."

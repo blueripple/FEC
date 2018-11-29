@@ -1,34 +1,40 @@
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
+--{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveDataTypeable    #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+--{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TemplateHaskell       #-}
 module OpenFEC.Types where
 
 import           Control.Lens
-import           Control.Lens.TH      (makeLenses)
-import           Control.Monad        (join, sequence)
-import qualified Data.Aeson           as A
+import           Control.Lens.TH           (makeLenses)
+import           Control.Monad             (join, sequence)
+import qualified Data.Aeson                as A
 import           Data.Aeson.Lens
-import qualified Data.Aeson.Types     as A
-import           Data.ByteString.Lazy (ByteString)
-import qualified Data.ByteString.Lazy as BS
-import           Data.Foldable        (foldl')
-import qualified Data.Foldable        as F
-import           Data.Scientific      (FPFormat (Fixed), Scientific,
-                                       formatScientific)
-import           Data.Text            (Text, pack)
-import           Data.Time.Calendar   (Day)
-import           Data.Time.Clock      (UTCTime)
-import           Data.Time.Format     (defaultTimeLocale, formatTime)
-import           Data.Time.LocalTime  (LocalTime, utc, utcToLocalTime)
-import           Data.Vector          (Vector, toList)
-import           GHC.Generics         (Generic)
-import qualified Text.Tabl            as TT
-import           Web.HttpApiData      (ToHttpApiData (..))
+import qualified Data.Aeson.Types          as A
+import           Data.ByteString.Lazy      (ByteString)
+import qualified Data.ByteString.Lazy      as BS
+import           Data.Data                 (Data)
+import           Data.Foldable             (foldl')
+import qualified Data.Foldable             as F
+import           Data.Scientific           (FPFormat (Fixed), Scientific,
+                                            formatScientific)
+import           Data.Text                 (Text, pack)
+import           Data.Time.Calendar        (Day)
+import           Data.Time.Clock           (UTCTime)
+import           Data.Time.Format          (defaultTimeLocale, formatTime)
+import           Data.Time.LocalTime       (LocalTime, utc, utcToLocalTime)
+import           Data.Vector               (Vector, toList)
+import           GHC.Generics              (Generic)
+import qualified Text.PrettyPrint.Tabulate as PP
+import qualified Text.Tabl                 as TT
+import           Web.HttpApiData           (ToHttpApiData (..))
 
 import           OpenFEC.JsonUtils
-import qualified OpenFEC.QueryTypes   as FEC
+import qualified OpenFEC.QueryTypes        as FEC
 
 -- All fields are prefixed with entity name followed by field name.
 -- If the field name begins with entity name (e.g., "candidate_id" in Candidate) we begin with double underscore.
@@ -230,7 +236,8 @@ disbursementTable x =
   let ds = F.toList $ disbursementToRow <$> x
   in TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone disbursementAligns (disbursementHeaders : ds)
 
-data SpendingIntention = Support | Oppose deriving (Generic, Show, Eq)
+data SpendingIntention = Support | Oppose deriving (Generic, Show, Eq, Data)
+instance PP.CellValueFormatter SpendingIntention
 
 instance A.ToJSON SpendingIntention where
   toJSON Support = A.String "S"
@@ -247,6 +254,7 @@ data IndExpenditure = IndExpenditure
   {
     _indExpenditure_date                     :: LocalTime
   , _indExpenditure_amount                   :: Amount
+  , _indExpenditure_amount_from_ytd          :: Amount
   , _indExpenditure_support_oppose_indicator :: SpendingIntention
   , _indExpenditure_office_total_ytd         :: Amount
   , _indExpenditure_category_code_full       :: Maybe Text
@@ -254,7 +262,11 @@ data IndExpenditure = IndExpenditure
   , _indExpenditure_candidate_id             :: CandidateID
   , _indExpenditure_committee_id             :: CommitteeID
   , _indExpenditure_committee_name           :: Text
-  } deriving (Generic, Show)
+  } deriving (Generic, Show, Eq)
+
+instance PP.CellValueFormatter LocalTime
+instance PP.CellValueFormatter Scientific
+instance PP.CellValueFormatter Text
 
 instance A.FromJSON IndExpenditure where
   parseJSON = A.genericParseJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
@@ -262,12 +274,15 @@ instance A.FromJSON IndExpenditure where
 instance A.ToJSON IndExpenditure where
   toJSON = A.genericToJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
 
+instance PP.Tabulate IndExpenditure PP.DoNotExpandWhenNested
+
 makeLenses ''IndExpenditure
 
 indExpenditureFromResultJSON :: A.Value -> Either ByteString IndExpenditure
 indExpenditureFromResultJSON val = IndExpenditure
   <$> val |#| "expenditure_date"
   <*> val |#| "expenditure_amount"
+  <*> pure (0 :: Amount)
   <*> val |#| "support_oppose_indicator"
   <*> val |#| "office_total_ytd"
   <*> val |#| "category_code_full"
@@ -276,6 +291,7 @@ indExpenditureFromResultJSON val = IndExpenditure
   <*> val |#| "committee_id"
   <*> tryKeys ["committee","name"]  val
 
+{-
 indExpenditureHeaders :: [Text]
 indExpenditureHeaders = ["Date", "Amount", "Intention", "YTD", "Category", "Description", "Candidate ID", "Committee ID", "Committee Name"]
 
@@ -289,6 +305,7 @@ indExpenditureTable :: (Functor t, Foldable t) => t IndExpenditure -> Text
 indExpenditureTable x =
   let ds = F.toList $ indExpenditureToRow <$> x
   in TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone indExpenditureAligns (indExpenditureHeaders : ds)
+-}
 
 data PartyExpenditure = PartyExpenditure
   {

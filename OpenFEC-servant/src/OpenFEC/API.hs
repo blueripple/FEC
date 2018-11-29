@@ -17,13 +17,19 @@ import           Servant.Client
 import           Servant.Client.Generic
 
 import           Control.Exception.Safe (throw)
+import           Control.Monad.IO.Class (liftIO)
+import qualified Control.Monad.State    as S
 import qualified Data.Aeson             as A
 import           Data.ByteString.Char8  (pack)
+import qualified Data.Foldable          as F
+import qualified Data.Map               as M
+import           Data.Maybe             (fromMaybe)
 import           Data.Monoid            ((<>))
 import           Data.Scientific        (Scientific)
 import           Data.Text              (Text)
 import           Data.Time.LocalTime    (LocalTime)
-import           Data.Vector            (Vector, empty)
+import           Data.Vector            (Vector)
+import qualified Data.Vector            as V
 
 import qualified OpenFEC.QueryTypes     as FEC
 import qualified OpenFEC.Types          as FEC
@@ -113,6 +119,29 @@ getIndependentExpendituresByCandidateIPage cid cycles liM leM = do
     Left errBS -> throw $ err417 { errBody = "Decoding Error (Aeson.Value -> FEC.IndexedPage LocalTime) in getIndependentExpendituresIPageByCandidate. " <> errBS }
     Right ip -> return ip
 
+fixIndEx :: Vector FEC.IndExpenditure -> Vector FEC.IndExpenditure
+fixIndEx x =
+  -- remove identical on same day
+  let f ie = do
+        prevByCommitteeOnDay <- S.get
+        let cid = FEC._indExpenditure_committee_id ie
+            mapKey = (cid, FEC._indExpenditure_date ie)
+            prevOnDayL = fromMaybe [] $ M.lookup mapKey prevByCommitteeOnDay
+            isDupe = F.elem ie prevOnDayL
+        S.put (M.insert mapKey (ie : prevOnDayL) prevByCommitteeOnDay)
+        if isDupe then return False else return True
+      deduped = S.evalState (V.filterM f x) M.empty
+  -- compute new amounts based on ytd since there are still dupes and re-estimates and ...
+      g ie = do
+        prevByCommittee <- S.get
+        let cid = FEC._indExpenditure_committee_id ie
+            prevYTDByCommittee = fromMaybe (0 :: FEC.Amount) $ M.lookup cid prevByCommittee
+            currYTDByCommittee = FEC._indExpenditure_office_total_ytd ie
+            adjAmount = max 0 (currYTDByCommittee - prevYTDByCommittee)
+        S.put $ M.insert cid currYTDByCommittee prevByCommittee
+        return $ ie { FEC._indExpenditure_amount_from_ytd = adjAmount }
+  in V.reverse $ S.evalState (V.mapM g (V.reverse deduped)) M.empty
+
 getIndependentExpendituresByCommitteeIPage :: FEC.CommitteeID -> [FEC.ElectionYear] -> Maybe Int -> Maybe LocalTime -> ClientM (FEC.IndexedPage LocalTime)
 getIndependentExpendituresByCommitteeIPage cid cycles liM leM = do
   json <- (_independent_expenditures fecClients) (Just FEC.fecApiKey) Nothing (Just cid) cycles liM leM
@@ -123,11 +152,15 @@ getIndependentExpendituresByCommitteeIPage cid cycles liM leM = do
 
 -- There are some wiht no support/oppose indicator.  No idea what to do.  Assume support?  Drop?
 getIndependentExpendituresByCandidate :: FEC.CandidateID -> [FEC.ElectionYear] -> ClientM (Vector FEC.IndExpenditure)
-getIndependentExpendituresByCandidate cid cycles =
+getIndependentExpendituresByCandidate cid cycles = do
   let getOnePage x = case x of
         Nothing -> getIndependentExpendituresByCandidateIPage cid cycles Nothing Nothing
         Just (FEC.LastIndex li led) -> getIndependentExpendituresByCandidateIPage cid cycles (Just li) (Just led)
-  in FEC.getAllIndexedPages Nothing FEC.SkipFailed getOnePage FEC.indExpenditureFromResultJSON
+  raw <- FEC.getAllIndexedPages Nothing FEC.SkipFailed getOnePage FEC.indExpenditureFromResultJSON
+  let deduped = fixIndEx raw
+      num_dupes = V.length raw - V.length deduped
+  liftIO . putStrLn $ "Dropped " ++ (show num_dupes) ++ " duplicates from independent expenditures (Candidate ID: " ++ show cid ++ ")."
+  return deduped
 
 getIndependentExpendituresByCommittee :: FEC.CommitteeID -> [FEC.ElectionYear] -> ClientM (Vector FEC.IndExpenditure)
 getIndependentExpendituresByCommittee cid cycles =

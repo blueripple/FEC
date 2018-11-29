@@ -30,6 +30,7 @@ library
                      , aeson
                      , lens
                      , lens-aeson
+                     , pptable
                      , servant
                      , servant-client
                      , text
@@ -46,6 +47,7 @@ executable FEC
                      , aeson
                      , http-client >= 0.5.12
                      , http-client-tls
+                     , pptable
                      , servant-client
                      , text
                      , transformers

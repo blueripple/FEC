@@ -3,7 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module OpenFEC.JsonUtils where
 
-import           Control.Lens         (Getting, (^?))
+import           Control.Lens         (Getting, failing, to, (^?))
 import           Control.Monad        (join, sequence)
 import qualified Data.Aeson           as A
 import           Data.Aeson.Lens      (key, _JSON)
@@ -36,6 +36,12 @@ tryKeys keys val =
 
 tryKey :: (A.FromJSON a, A.ToJSON a, Typeable a) => Text -> A.Value -> Either ByteString a
 tryKey x = tryKeys [x]
+
+tryTwoKeys :: (Typeable a, A.FromJSON a, A.ToJSON a, A.FromJSON b, A.ToJSON b) => Text -> Text -> (b -> a) -> A.Value -> Either ByteString a
+tryTwoKeys key1 key2 f val =
+  let k1BS = BS.fromStrict $ encodeUtf8 key1
+      k2BS = BS.fromStrict $ encodeUtf8 key2
+  in tryP (k1BS <> " AND " <> k2BS) (failing (key key1 . _JSON) (key key2 . _JSON . to f)) val
 
 (|#|) :: (A.FromJSON a, A.ToJSON a, Typeable a) => A.Value -> Text -> Either ByteString a
 (|#|) = flip tryKey

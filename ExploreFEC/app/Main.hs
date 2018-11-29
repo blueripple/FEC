@@ -6,8 +6,9 @@ import qualified OpenFEC.API              as FEC
 import qualified OpenFEC.QueryTypes       as FEC
 import qualified OpenFEC.Types            as FEC
 
-import           ExploreFEC.Data.Spending (describeSpending,
-                                           getCandidateSpending)
+import           ExploreFEC.Data.Spending (getHouseRaceSpending,
+                                           getPresidentialRaceSpending,
+                                           getSenateRaceSpending)
 
 import           Control.Monad            (sequence)
 import           Control.Monad.IO.Class   (liftIO)
@@ -34,18 +35,15 @@ main = do
 --      query = FEC.getDisbursements "C00652248" 2018
 --      query = FEC.getIndependentExpendituresByCandidate "H8NY11113" []
 --      query = FEC.getPartyExpenditures "H0CA27085" []
-      query = do
-        candidates <- FEC.getHouseCandidates "NY" 11 2018
-        spending <- sequence (flip getCandidateSpending 2018 <$> V.toList candidates)
-        liftIO $ sequence $ fmap (putStrLn . T.unpack . describeSpending) spending
-        return spending
+--      query = getHouseRaceSpending "NY" 11
+      query = getSenateRaceSpending "FL" 2018
       managerSettings = tlsManagerSettings --{ managerModifyRequest = \req -> print req >> return req }
   manager <- newManager managerSettings
   let clientEnv = mkClientEnv manager FEC.baseUrl
   result <- runClientM query clientEnv
   case result of
     Left err -> putStrLn $ "Query returned an error: " ++ show err
-    Right x  -> encodeFile "NY-11.json" x
+    Right x  -> encodeFile "FL-senate.json" x
   return ()
 
 

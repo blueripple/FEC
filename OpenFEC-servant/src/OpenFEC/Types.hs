@@ -21,7 +21,7 @@ import           Data.Text            (Text, pack)
 import           Data.Time.Calendar   (Day)
 import           Data.Time.Clock      (UTCTime)
 import           Data.Time.Format     (defaultTimeLocale, formatTime)
-import           Data.Time.LocalTime  (LocalTime)
+import           Data.Time.LocalTime  (LocalTime, utc, utcToLocalTime)
 import           Data.Vector          (Vector, toList)
 import           GHC.Generics         (Generic)
 import qualified Text.Tabl            as TT
@@ -194,7 +194,7 @@ data Disbursement = Disbursement
     _disbursement_date              :: LocalTime
   , _disbursement_amount            :: Amount
   , _disbursement_purpose_Category  :: Text
-  , _disbursement_recipient_name    :: Text
+  , _disbursement_recipient_name    :: Maybe Text
   , _disbursement_committee_id      :: CommitteeID
   , _disbursement_line_number_label :: Text
   } deriving (Generic, Show)
@@ -210,7 +210,7 @@ makeLenses ''Disbursement
 
 disbursementFromResultJSON :: A.Value -> Either ByteString Disbursement
 disbursementFromResultJSON val = Disbursement
-  <$> val |#| "disbursement_date"
+  <$> tryTwoKeys "disbursement_date" "load_date" (utcToLocalTime utc) val -- val |#| "disbursement_date"
   <*> val |#| "disbursement_amount"
   <*> val |#| "disbursement_purpose_category"
   <*> val |#| "recipient_name"
@@ -223,7 +223,7 @@ disbursementHeaders = ["Date", "Amount", "Purpose", "Recipient", "Committee ID",
 disbursementAligns = [TT.AlignLeft, TT.AlignRight, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft]
 
 disbursementToRow :: Disbursement -> [Text]
-disbursementToRow (Disbursement d a pc rn ci lnl)  = [localTimeToText d, amountToText a, pc, rn, ci, lnl]
+disbursementToRow (Disbursement d a pc rn ci lnl)  = [localTimeToText d, amountToText a, pc, maybe "N/A" id rn, ci, lnl]
 
 disbursementTable :: (Functor t, Foldable t) => t Disbursement -> Text
 disbursementTable x =

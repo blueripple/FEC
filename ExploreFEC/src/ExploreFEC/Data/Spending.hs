@@ -62,7 +62,7 @@ getCandidateSpending cand year = do
   let candidate_id = FEC._candidate_id cand
       getDisbursements committee = FEC.getDisbursements (FEC._committee_id committee) year
   committees <- FEC.getCommittees candidate_id [year]
-  liftIO $ putStrLn $ "committees: " ++ show (FEC._committee_id <$> committees)
+--  liftIO $ putStrLn $ "committees: " ++ show (FEC._committee_id <$> committees)
   disbursements <- fmap V.concat . sequence $ (getDisbursements <$> V.toList committees)
   indExpenditures <- FEC.getIndependentExpendituresByCandidate candidate_id [year]
   partyExpenditures <- FEC.getPartyExpenditures candidate_id [year]

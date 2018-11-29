@@ -121,12 +121,13 @@ getIndependentExpendituresByCommitteeIPage cid cycles liM leM = do
     Left errBS -> throw $ err417 { errBody = "Decoding Error (Aeson.Value -> FEC.IndexedPage LocalTime) in getIndependentExpendituresIPageByCandidate. " <> errBS }
     Right ip -> return ip
 
+-- There are some wiht no support/oppose indicator.  No idea what to do.  Assume support?  Drop?
 getIndependentExpendituresByCandidate :: FEC.CandidateID -> [FEC.ElectionYear] -> ClientM (Vector FEC.IndExpenditure)
 getIndependentExpendituresByCandidate cid cycles =
   let getOnePage x = case x of
         Nothing -> getIndependentExpendituresByCandidateIPage cid cycles Nothing Nothing
         Just (FEC.LastIndex li led) -> getIndependentExpendituresByCandidateIPage cid cycles (Just li) (Just led)
-  in FEC.getAllIndexedPages Nothing FEC.NoneIfAnyFailed getOnePage FEC.indExpenditureFromResultJSON
+  in FEC.getAllIndexedPages Nothing FEC.SkipFailed getOnePage FEC.indExpenditureFromResultJSON
 
 getIndependentExpendituresByCommittee :: FEC.CommitteeID -> [FEC.ElectionYear] -> ClientM (Vector FEC.IndExpenditure)
 getIndependentExpendituresByCommittee cid cycles =

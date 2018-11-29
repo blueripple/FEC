@@ -39,13 +39,13 @@ fecMaxPerPage = 100
 type ElectionYear = Int
 type ElectionCycle = Int
 
-data Office = House | Senate | President
+data Office = House | Senate | President deriving (Show, Enum, Bounded, Eq, Ord)
 instance ToJSON Office where
   toJSON House     = A.String "H"
   toJSON Senate    = A.String "S"
   toJSON President = A.String "P"
 
-data Party = Democrat | Republican | WorkingFamilies | Conservative | Green | Libertarian deriving (Show, Enum, Bounded)
+data Party = Democrat | Republican | WorkingFamilies | Conservative | Green | Libertarian | Unknown deriving (Show, Enum, Bounded, Eq, Ord)
 instance ToJSON Party where
   toJSON Democrat        = A.String "DEM"
   toJSON Republican      = A.String "REP"
@@ -53,6 +53,7 @@ instance ToJSON Party where
   toJSON Conservative    = A.String "CRV"
   toJSON Green           = A.String "GRE"
   toJSON Libertarian     = A.String "LIB"
+  toJSON Unknown         = A.String "UNK"
 
 instance FromJSON Party where
   parseJSON o = A.withText "Party" f o where
@@ -63,6 +64,7 @@ instance FromJSON Party where
       "CRV" -> return Conservative
       "GRE" -> return Green
       "LIB" -> return Libertarian
+      "UNK" -> return Unknown
       _     -> A.typeMismatch "Party" o
 
 

@@ -33,9 +33,9 @@ main = do
 --      query = FEC.getCommittees "H8NY11113" []
 --      query = FEC.getReports "C00652248" [] [] []
 --      query = FEC.getDisbursements "C00652248" 2018
-      query = FEC.getIndependentExpendituresByCandidate "H6NY11174" [2018]
+--      query = FEC.getIndependentExpendituresByCandidate "H6NY11174" [2018]
 --      query = FEC.getPartyExpenditures "H0CA27085" []
---      query = getHouseRaceSpending "NY" 11 2018
+      query = getHouseRaceSpending "NY" 11 2018
 --      query = getSenateRaceSpending "FL" 2018
       managerSettings = tlsManagerSettings --{ managerModifyRequest = \req -> print req >> return req }
   manager <- newManager managerSettings
@@ -43,8 +43,8 @@ main = do
   result <- runClientM query clientEnv
   case result of
     Left err -> putStrLn $ "Query returned an error: " ++ show err
---    Right x  -> encodeFile "NY-11.json" x
-    Right x  -> PP.printTable x
+    Right x  -> encodeFile "NY-11.json" x
+--    Right x  -> PP.printTable x
   return ()
 
 

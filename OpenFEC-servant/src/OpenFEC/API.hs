@@ -138,7 +138,7 @@ fixIndEx x =
             prevYTDByCommittee = fromMaybe (0 :: FEC.Amount) $ M.lookup cid prevByCommittee
             currYTDByCommittee = FEC._indExpenditure_office_total_ytd ie
             adjAmount = max 0 (currYTDByCommittee - prevYTDByCommittee)
-        S.put $ M.insert cid currYTDByCommittee prevByCommittee
+        S.put $ M.insert cid (max currYTDByCommittee prevYTDByCommittee) prevByCommittee
         return $ ie { FEC._indExpenditure_amount_from_ytd = adjAmount }
   in V.reverse $ S.evalState (V.mapM g (V.reverse deduped)) M.empty
 

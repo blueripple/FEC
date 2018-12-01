@@ -19,7 +19,7 @@ library
   exposed-modules:
                   OpenFEC.Types
                 , OpenFEC.API
-                , OpenFEC.QueryTypes
+                , OpenFEC.Pagination
                 , OpenFEC.JsonUtils
   -- other-modules:
   -- other-extensions:
@@ -34,6 +34,7 @@ library
                      , lens-aeson
                      , vector
                      , http-api-data
+                     , OpenFEC-beam
                      , pptable
                      , safe-exceptions
                      , scientific

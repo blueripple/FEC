@@ -3,7 +3,6 @@ module Main where
 
 
 import qualified OpenFEC.API               as FEC
-import qualified OpenFEC.QueryTypes        as FEC
 import qualified OpenFEC.Types             as FEC
 
 import           ExploreFEC.Data.Spending  (getHouseRaceSpending,

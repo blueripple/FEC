@@ -17,7 +17,6 @@ import qualified Data.Text              as T
 import qualified Data.Vector            as V
 import           GHC.Generics           (Generic)
 import qualified OpenFEC.API            as FEC
-import qualified OpenFEC.QueryTypes     as FEC
 import qualified OpenFEC.Types          as FEC
 
 

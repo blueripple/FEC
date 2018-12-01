@@ -31,7 +31,7 @@ import           Data.Time.LocalTime    (LocalTime)
 import           Data.Vector            (Vector)
 import qualified Data.Vector            as V
 
-import qualified OpenFEC.QueryTypes     as FEC
+import qualified OpenFEC.Pagination     as FEC
 import qualified OpenFEC.Types          as FEC
 
 baseUrl = BaseUrl Https "api.open.fec.gov" 443 "/v1"
@@ -50,12 +50,20 @@ data FEC_Routes route = FEC_Routes
 fecClients :: FEC_Routes (AsClientT ClientM)
 fecClients = genericClient
 
+-- OpenFEC specific constants
+
+type ApiKey = Text
+fecApiKey :: ApiKey
+fecApiKey = "jjt0sf4z7FVpSAXoTndlnLKl0sDZUFcf3PQjpXrW"
+
+fecMaxPerPage :: Int
+fecMaxPerPage = 100
+
 -- specific useful queries
 
 getCandidatesPage :: [FEC.Office] -> [FEC.Party] -> [FEC.ElectionYear] -> Maybe FEC.State -> Maybe FEC.District -> FEC.PageNumber -> ClientM FEC.Page
 getCandidatesPage offices parties electionYears stateM districtM page =
-  let ttql = FEC.toTextQueryList
-  in (_candidates fecClients) (Just FEC.fecApiKey) ["C"] (ttql offices) (ttql parties) electionYears stateM districtM (Just FEC.fecMaxPerPage) (Just page)
+  (_candidates fecClients) (Just fecApiKey) ["C"] (FEC.officeToText <$> offices) (FEC.partyToText <$> parties) electionYears stateM districtM (Just fecMaxPerPage) (Just page)
 
 getCandidates :: [FEC.Office] -> [FEC.Party] -> [FEC.ElectionYear] ->  Maybe FEC.State -> Maybe FEC.District -> ClientM (Vector FEC.Candidate)
 getCandidates offices parties electionYears stateM districtM =
@@ -72,7 +80,7 @@ getPresidentialCandidates :: FEC.ElectionYear -> ClientM (Vector FEC.Candidate)
 getPresidentialCandidates electionYear = getCandidates [FEC.President] [] [electionYear] Nothing Nothing
 
 getCommitteesPage :: FEC.CandidateID -> [FEC.ElectionYear] -> FEC.PageNumber -> ClientM FEC.Page
-getCommitteesPage cid years page = (_committees fecClients) cid (Just FEC.fecApiKey) years (Just FEC.fecMaxPerPage) (Just page)
+getCommitteesPage cid years page = (_committees fecClients) cid (Just fecApiKey) years (Just fecMaxPerPage) (Just page)
 
 getCommittees :: FEC.CandidateID -> [FEC.ElectionYear] -> ClientM (Vector FEC.Committee)
 getCommittees cid years =
@@ -81,7 +89,7 @@ getCommittees cid years =
 
 getReportsPage :: FEC.CommitteeID -> [Text] -> [FEC.ElectionYear] -> [FEC.ElectionCycle] -> FEC.PageNumber -> ClientM FEC.Page
 getReportsPage cid reportTypes reportYears electionCycles page =
-  (_reports fecClients) cid (Just FEC.fecApiKey) reportTypes reportYears electionCycles (Just FEC.fecMaxPerPage) (Just page)
+  (_reports fecClients) cid (Just fecApiKey) reportTypes reportYears electionCycles (Just fecMaxPerPage) (Just page)
 
 getReports :: FEC.CommitteeID -> [Text] -> [FEC.ElectionYear] -> [FEC.ElectionCycle] -> ClientM (Vector FEC.Report)
 getReports cid reportTypes reportYears electionCycles =
@@ -97,7 +105,7 @@ getReportsByCandidate id reportType electionYears electionCycles = do
 
 getDisbursementsIPage :: FEC.CommitteeID -> FEC.ElectionYear -> Maybe Int -> Maybe LocalTime -> ClientM (FEC.IndexedPage LocalTime)
 getDisbursementsIPage cid electionYear lastIndexM lastDisbursementDateM = do
-  json <- (_disbursements fecClients) (Just FEC.fecApiKey) (Just cid) (Just electionYear) (Just FEC.fecMaxPerPage) lastIndexM lastDisbursementDateM
+  json <- (_disbursements fecClients) (Just fecApiKey) (Just cid) (Just electionYear) (Just fecMaxPerPage) lastIndexM lastDisbursementDateM
   let parsedE = FEC.getIndexedPageE "last_disbursement_date" json
   case parsedE of
     Left errBS -> throw $ err417 { errBody = "Decoding Error (Aeson.Value -> FEC.IndexedPage LocalTime) in getDisbursementsIPage. " <> errBS }
@@ -113,7 +121,7 @@ getDisbursements cid electionYear =
 
 getIndependentExpendituresByCandidateIPage :: FEC.CandidateID -> [FEC.ElectionYear] -> Maybe Int -> Maybe LocalTime -> ClientM (FEC.IndexedPage LocalTime)
 getIndependentExpendituresByCandidateIPage cid cycles liM leM = do
-  json <- (_independent_expenditures fecClients) (Just FEC.fecApiKey) (Just cid) Nothing cycles liM leM
+  json <- (_independent_expenditures fecClients) (Just fecApiKey) (Just cid) Nothing cycles liM leM
   let parsedE = FEC.getIndexedPageE "last_expenditure_date" json
   case parsedE of
     Left errBS -> throw $ err417 { errBody = "Decoding Error (Aeson.Value -> FEC.IndexedPage LocalTime) in getIndependentExpendituresIPageByCandidate. " <> errBS }
@@ -144,13 +152,13 @@ fixIndEx x =
 
 getIndependentExpendituresByCommitteeIPage :: FEC.CommitteeID -> [FEC.ElectionYear] -> Maybe Int -> Maybe LocalTime -> ClientM (FEC.IndexedPage LocalTime)
 getIndependentExpendituresByCommitteeIPage cid cycles liM leM = do
-  json <- (_independent_expenditures fecClients) (Just FEC.fecApiKey) Nothing (Just cid) cycles liM leM
+  json <- (_independent_expenditures fecClients) (Just fecApiKey) Nothing (Just cid) cycles liM leM
   let parsedE = FEC.getIndexedPageE "last_expenditure_date" json
   case parsedE of
     Left errBS -> throw $ err417 { errBody = "Decoding Error (Aeson.Value -> FEC.IndexedPage LocalTime) in getIndependentExpendituresIPageByCandidate. " <> errBS }
     Right ip -> return ip
 
--- There are some wiht no support/oppose indicator.  No idea what to do.  Assume support?  Drop?
+-- There are some with no support/oppose indicator.  No idea what to do.  Assume support?  Drop?
 getIndependentExpendituresByCandidate :: FEC.CandidateID -> [FEC.ElectionYear] -> ClientM (Vector FEC.IndExpenditure)
 getIndependentExpendituresByCandidate cid cycles = do
   let getOnePage x = case x of
@@ -171,7 +179,7 @@ getIndependentExpendituresByCommittee cid cycles =
 
 getPartyExpendituresPage :: FEC.CandidateID -> [FEC.ElectionYear] -> FEC.PageNumber -> ClientM FEC.Page
 getPartyExpendituresPage cid cycles page =
-  (_party_expenditures fecClients) (Just FEC.fecApiKey) (Just cid) cycles (Just FEC.fecMaxPerPage) (Just page)
+  (_party_expenditures fecClients) (Just fecApiKey) (Just cid) cycles (Just fecMaxPerPage) (Just page)
 
 getPartyExpenditures :: FEC.CandidateID -> [FEC.ElectionYear] -> ClientM (Vector FEC.PartyExpenditure)
 getPartyExpenditures cid cycles =

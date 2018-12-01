@@ -6,8 +6,14 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 --{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE TemplateHaskell       #-}
-module OpenFEC.Types where
+{-# LANGUAGE TypeSynonymInstances  #-}
+module OpenFEC.Types
+  (
+    module OpenFEC.Types
+  , module OpenFEC.Beam.Types
+  ) where
 
 import           Control.Lens
 import           Control.Lens.TH           (makeLenses)
@@ -34,7 +40,10 @@ import qualified Text.Tabl                 as TT
 import           Web.HttpApiData           (ToHttpApiData (..))
 
 import           OpenFEC.JsonUtils
-import qualified OpenFEC.QueryTypes        as FEC
+import qualified OpenFEC.Pagination        as FEC
+
+import           OpenFEC.Beam.Types        (Candidate, CandidateT (..),
+                                            Party (..))
 
 -- All fields are prefixed with entity name followed by field name.
 -- If the field name begins with entity name (e.g., "candidate_id" in Candidate) we begin with double underscore.
@@ -46,15 +55,54 @@ type Name = Text
 type State = Text
 type District = Int
 type Amount = Scientific
+type ElectionYear = Int
+type ElectionCycle = Int
 
+data Office = House | Senate | President deriving (Show, Enum, Bounded, Eq, Ord)
+officeToText :: Office -> Text
+officeToText House     = "H"
+officeToText Senate    = "S"
+officeToText President = "P"
+
+instance A.ToJSON Office where
+  toJSON = A.String . officeToText
+
+--data Party = Democrat | Republican | WorkingFamilies | Conservative | Green | Libertarian | Unknown deriving (Show, Enum, Bounded, Eq, Ord)
+partyToText :: Party -> Text
+partyToText Democrat        = "DEM"
+partyToText Republican      = "REP"
+partyToText WorkingFamilies = "WFP"
+partyToText Conservative    = "CRV"
+partyToText Green           = "GRE"
+partyToText Libertarian     = "LIB"
+partyToText Unknown         = "UNK"
+
+instance A.ToJSON Party where
+  toJSON = A.String . partyToText
+
+-- this one is used in Parsing from FEC data.  Maybe we can build a custom Prism?
+instance A.FromJSON Party where
+  parseJSON o = A.withText "Party" f o where
+    f t = case t of
+      "DEM" -> return Democrat
+      "REP" -> return Republican
+      "WFP" -> return WorkingFamilies
+      "CRV" -> return Conservative
+      "GRE" -> return Green
+      "LIB" -> return Libertarian
+      "UNK" -> return Unknown
+      _     -> A.typeMismatch "Party" o
+
+{-
 data Candidate = Candidate
   {
     _candidate_id       :: CandidateID
   , _candidate_name     :: Name
   , _candidate_state    :: State
   , _candidate_district :: District
-  , _candidate_party    :: FEC.Party
+  , _candidate_party    :: Party
   } deriving (Show, Generic)
+-}
 
 instance A.FromJSON Candidate where
   parseJSON = A.genericParseJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
@@ -62,17 +110,17 @@ instance A.FromJSON Candidate where
 instance A.ToJSON Candidate where
   toJSON = A.genericToJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
 
-makeLenses ''Candidate
+--makeLenses ''Candidate
 
 candidateFromResultJSON :: A.Value -> Either ByteString Candidate
-candidateFromResultJSON val = Candidate
+candidateFromResultJSON val = CandidateT
   <$> val |#| "candidate_id"
   <*> val |#| "name"
   <*> val |#| "state"
   <*> val |#| "district_number"
   <*> val |#| "party"
 
-
+{-
 candidateHeaders :: [Text]
 candidateHeaders = ["ID","Name","State","District","Party"]
 
@@ -85,6 +133,7 @@ candidateTable :: (Functor t, Foldable t) => t Candidate -> Text
 candidateTable x =
   let cs = F.toList $ candidateToRow <$> x
   in  TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone candidateAligns (candidateHeaders : cs)
+-}
 
 data Committee = Committee
   {

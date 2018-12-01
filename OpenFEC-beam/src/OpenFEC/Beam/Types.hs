@@ -8,17 +8,25 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeSynonymInstances  #-}
+{-# LANGUAGE UndecidableInstances  #-}
 module OpenFEC.Beam.Types where
 
 
-import           Database.Beam          (C)
-import qualified Database.Beam          as B
+import           Database.Beam                    (C)
+import qualified Database.Beam                    as B
+import qualified Database.Beam.Backend            as B
+import qualified Database.Beam.Backend.SQL        as B
+
+import qualified Database.Beam.Sqlite             as B
+import qualified Database.SQLite.Simple.FromField as SL
+
 --import qualified Database.Beam.Sqlite   as B
 
-import           Control.Monad.Identity (Identity)
-import           Data.Scientific        (Scientific)
-import           Data.Text              (Text)
-import           GHC.Generics           (Generic)
+import           Control.Monad.Identity           (Identity)
+import           Data.Scientific                  (Scientific)
+import           Data.Text                        (Text)
+import           GHC.Generics                     (Generic)
+import           Text.Read                        (readMaybe)
 
 type CandidateID = Text
 type CommitteeID = Text
@@ -27,7 +35,21 @@ type State = Text
 type District = Int
 type Amount = Scientific
 
-data Party = Democrat | Republican | WorkingFamilies | Conservative | Green | Libertarian | Unknown deriving (Show, Enum, Bounded, Eq, Ord)
+data Party = Democrat | Republican | WorkingFamilies | Conservative | Green | Libertarian | Unknown deriving (Show, Read, Enum, Bounded, Eq, Ord, Generic)
+
+-- marshall to DB as string via show. so VARCHAR 15
+instance B.HasSqlValueSyntax be String => B.HasSqlValueSyntax be Party where
+  sqlValueSyntax = B.autoSqlValueSyntax
+
+instance SL.FromField Party where
+  fromField f = do
+    x <- readMaybe <$> SL.fromField f
+    case x of
+      Nothing -> SL.returnError SL.ConversionFailed f "Could not 'read' value for Party"
+      Just x -> pure x
+
+instance B.FromBackendRow B.Sqlite Party
+
 
 data CandidateT f = CandidateT
   {

@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module OpenFEC.QueryTypes where
+module OpenFEC.Pagination where
 
 import           Control.Exception.Safe (MonadThrow, throw)
 import           Control.Lens
@@ -25,47 +25,6 @@ import           Text.Read              (readMaybe)
 import           Servant
 
 import           OpenFEC.JsonUtils
-
-toTextQueryList :: ToJSON a => [a] -> [Text]
-toTextQueryList = catMaybes . fmap (A.parseMaybe A.parseJSON . A.toJSON)
-
-type ApiKey = Text
-fecApiKey :: ApiKey
-fecApiKey = "jjt0sf4z7FVpSAXoTndlnLKl0sDZUFcf3PQjpXrW"
-
-fecMaxPerPage :: Int
-fecMaxPerPage = 100
-
-type ElectionYear = Int
-type ElectionCycle = Int
-
-data Office = House | Senate | President deriving (Show, Enum, Bounded, Eq, Ord)
-instance ToJSON Office where
-  toJSON House     = A.String "H"
-  toJSON Senate    = A.String "S"
-  toJSON President = A.String "P"
-
-data Party = Democrat | Republican | WorkingFamilies | Conservative | Green | Libertarian | Unknown deriving (Show, Enum, Bounded, Eq, Ord)
-instance ToJSON Party where
-  toJSON Democrat        = A.String "DEM"
-  toJSON Republican      = A.String "REP"
-  toJSON WorkingFamilies = A.String "WFP"
-  toJSON Conservative    = A.String "CRV"
-  toJSON Green           = A.String "GRE"
-  toJSON Libertarian     = A.String "LIB"
-  toJSON Unknown         = A.String "UNK"
-
-instance FromJSON Party where
-  parseJSON o = A.withText "Party" f o where
-    f t = case t of
-      "DEM" -> return Democrat
-      "REP" -> return Republican
-      "WFP" -> return WorkingFamilies
-      "CRV" -> return Conservative
-      "GRE" -> return Green
-      "LIB" -> return Libertarian
-      "UNK" -> return Unknown
-      _     -> A.typeMismatch "Party" o
 
 
 type PageNumber = Int
@@ -110,17 +69,6 @@ getAllPages maxPagesM fs getPage decodeOne = nextPage [] 1 where
 data LastIndex a = LastIndex { lastIndex :: Int, lastOther :: a }
 
 data IndexedPage a = IndexedPage { lastIndexInfo :: Maybe (LastIndex a), resultsPerPage :: Int, indexedResults :: V.Vector A.Value }
-
-{-
-getIndexedPage :: (FromJSON a, ToJSON a) => Text -> A.Value -> Maybe (IndexedPage a)
-getIndexedPage k val =
-  let lastIndexM = join $ readMaybe . unpack <$> val ^? key "pagination" . key "last_indexes" . key "last_index" . _String
-      lastOtherM = val ^? key "pagination" . key "last_indexes" . key k . _JSON
-      perPageM = val ^? key "pagination" . key "per_page" . _Integral
-      resultsM = val ^? key "results" . _Array
-      lastIndexInfoM = LastIndex <$> lastIndexM <*> lastOtherM
-  in IndexedPage <$> lastIndexInfoM <*> perPageM <*> resultsM
--}
 
 getIndexedPageE :: (Typeable a, FromJSON a, ToJSON a) => Text -> A.Value -> Either ByteString (IndexedPage a)
 getIndexedPageE k val =

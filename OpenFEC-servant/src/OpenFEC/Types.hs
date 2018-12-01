@@ -71,10 +71,12 @@ instance A.ToJSON Office where
 partyToText :: Party -> Text
 partyToText Democrat        = "DEM"
 partyToText Republican      = "REP"
+partyToText Independent     = "IND"
 partyToText WorkingFamilies = "WFP"
-partyToText Conservative    = "CRV"
+partyToText Conservative    = "CON"
 partyToText Green           = "GRE"
 partyToText Libertarian     = "LIB"
+partyToText Other           = "OTH"
 partyToText Unknown         = "UNK"
 
 instance A.ToJSON Party where
@@ -86,12 +88,14 @@ instance A.FromJSON Party where
     f t = case t of
       "DEM" -> return Democrat
       "REP" -> return Republican
+      "IND" -> return Independent
       "WFP" -> return WorkingFamilies
-      "CRV" -> return Conservative
+      "CON" -> return Conservative
       "GRE" -> return Green
       "LIB" -> return Libertarian
+      "OTH" -> return Other
       "UNK" -> return Unknown
-      _     -> A.typeMismatch "Party" o
+      _     -> return Other --A.typeMismatch "Party" o
 
 {-
 data Candidate = Candidate

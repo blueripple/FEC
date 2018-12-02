@@ -35,7 +35,6 @@ runSelectReturningVector ::
   B.SqlSelect (B.Sql92SelectSyntax cmd) a -> m (V.Vector a)
 runSelectReturningVector (B.SqlSelect s) = runReturningVector (B.selectCmd s)
 
-
 type CandidateID = Text
 type CommitteeID = Text
 type Name = Text
@@ -45,10 +44,13 @@ type Amount = Scientific
 
 data Party = Democrat | Republican | Independent | WorkingFamilies | Conservative | Green | Libertarian | Other | Unknown deriving (Show, Read, Enum, Bounded, Eq, Ord, Generic)
 
+data Office = House | Senate | President deriving (Show, Read, Enum, Bounded, Eq, Ord, Generic)
+
 data CandidateT f = CandidateT
   {
     _candidate_id       :: C f CandidateID
   , _candidate_name     :: C f Name
+  , _candidate_office   :: C f Office
   , _candidate_state    :: C f State
   , _candidate_district :: C f District
   , _candidate_party    :: C f Party

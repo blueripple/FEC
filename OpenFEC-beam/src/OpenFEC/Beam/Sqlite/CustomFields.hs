@@ -11,12 +11,15 @@ import qualified Database.Beam.Sqlite             as B
 import qualified Database.Beam.Sqlite.Syntax      as B
 import qualified Database.SQLite.Simple.FromField as SL
 
-import           OpenFEC.Beam.Types               (Party)
+import           OpenFEC.Beam.Types               (Office, Party)
 
 import           Text.Read                        (readMaybe)
 
 -- marshall to DB as string via show.
 instance B.HasSqlValueSyntax be String => B.HasSqlValueSyntax be Party where
+  sqlValueSyntax = B.autoSqlValueSyntax
+
+instance B.HasSqlValueSyntax be String => B.HasSqlValueSyntax be Office where
   sqlValueSyntax = B.autoSqlValueSyntax
 
 -- marshall back by reading as String and then readMaybe
@@ -27,12 +30,24 @@ instance SL.FromField Party where
       Nothing -> SL.returnError SL.ConversionFailed f "Could not 'read' value for Party"
       Just x -> pure x
 
+instance SL.FromField Office where
+  fromField f = do
+    x <- readMaybe <$> SL.fromField f
+    case x of
+      Nothing -> SL.returnError SL.ConversionFailed f "Could not 'read' value for Office"
+      Just x -> pure x
+
 instance B.FromBackendRow B.Sqlite Party
+instance B.FromBackendRow B.Sqlite Office
 
 instance B.HasDefaultSqlDataType B.SqliteDataTypeSyntax Party where
   defaultSqlDataType _ _ = B.sqliteTextType
 
+instance B.HasDefaultSqlDataType B.SqliteDataTypeSyntax Office where
+  defaultSqlDataType _ _ = B.sqliteTextType
+
 instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax Party
+instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax Office
 
 
 {-

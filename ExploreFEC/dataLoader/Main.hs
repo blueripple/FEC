@@ -33,6 +33,7 @@ import           Control.Monad                    (mapM_, sequence)
 import           Control.Monad.IO.Class           (liftIO)
 import           Data.Aeson                       (encodeFile)
 import qualified Data.Foldable                    as F
+import qualified Data.List                        as L
 import           Data.List.Split                  (chunksOf)
 import           Data.List.Unique                 (repeated)
 import qualified Data.Map                         as M
@@ -51,24 +52,29 @@ import qualified Text.PrettyPrint.Tabulate        as PP
 openFEC_DbMigratable :: CheckedDatabaseSettings B.Sqlite FEC.OpenFEC_DB
 openFEC_DbMigratable = defaultMigratableDbSettings @B.SqliteCommandSyntax
 
+-- this is not order preserving
+-- O (n (log n)) since the sort is and the group and head are O(n)
+uniqueListBy :: (Eq b, Ord b) => (a -> b) -> [a] -> [a]
+uniqueListBy f = fmap L.head . L.groupBy (\x y -> f x == f y) . L.sortBy (\x y -> compare (f x) (f y))
+
+countCandidateRows = B.aggregate_ (\_ -> B.as_ @Int B.countAll_) (B.all_ $ FEC._openFEC_DB_candidates FEC.openFEC_DB)
+
 loadCandidates :: (forall a. ClientM a -> IO (Either ServantError a)) -> SL.Connection -> ([FEC.ElectionYear] -> ClientM (V.Vector FEC.Candidate)) -> [FEC.ElectionYear] -> IO ()
 loadCandidates runServant dbConn getCands electionYears = do
   servantRes <- runServant $ getCands electionYears
   case servantRes of
     Left err -> putStrLn $ "Servant Query returned an error: " ++ show err
     Right candidatesV -> do
-      let candidatesL = V.toList candidatesV
-          unique_candidatesL = snd $ F.foldl' (\(seen, newList) c ->
-                                                   let cid = (FEC._candidate_id c)
-                                                       already = isNothing (M.lookup cid seen)
-                                                   in (M.insert cid 0 seen, if already then newList else c : newList)) (M.empty, []) candidatesL
-
-          dups = repeated $ (FEC._candidate_id <$> unique_candidatesL)
-      putStrLn $ "dups: " ++ show dups
+      let candidatesL = uniqueListBy (FEC._candidate_id) $ V.toList candidatesV
+      putStrLn $ "Loading candidates table to DB. Got " ++ show (L.length candidatesL) ++ " unique candidates for election years=" ++ show electionYears
       B.runBeamSqlite dbConn $ do
         autoMigrate migrationBackend openFEC_DbMigratable
-        mapM_ (B.runInsert . B.insert (FEC._openFEC_DB_candidates FEC.openFEC_DB) . B.insertValues) $ chunksOf 100 unique_candidatesL
-        return ()
+        mapM_ (B.runInsert . B.insert (FEC._openFEC_DB_candidates FEC.openFEC_DB) . B.insertValues) $ chunksOf 100 candidatesL
+        totalRows <- B.runSelectReturningOne $ B.select countCandidateRows
+        liftIO $ putStrLn $ "Loaded " ++ maybe "0 (Error counting)" show totalRows ++ " rows."
+
+
+
 
 openFEC_SqliteFile = "../DBs/FEC-test.db"
 

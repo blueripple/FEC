@@ -43,7 +43,7 @@ import           OpenFEC.JsonUtils
 import qualified OpenFEC.Pagination        as FEC
 
 import           OpenFEC.Beam.Types        (Candidate, CandidateT (..),
-                                            Party (..))
+                                            Office (..), Party (..))
 
 -- All fields are prefixed with entity name followed by field name.
 -- If the field name begins with entity name (e.g., "candidate_id" in Candidate) we begin with double underscore.
@@ -58,7 +58,7 @@ type Amount = Scientific
 type ElectionYear = Int
 type ElectionCycle = Int
 
-data Office = House | Senate | President deriving (Show, Enum, Bounded, Eq, Ord)
+
 officeToText :: Office -> Text
 officeToText House     = "H"
 officeToText Senate    = "S"
@@ -67,7 +67,14 @@ officeToText President = "P"
 instance A.ToJSON Office where
   toJSON = A.String . officeToText
 
---data Party = Democrat | Republican | WorkingFamilies | Conservative | Green | Libertarian | Unknown deriving (Show, Enum, Bounded, Eq, Ord)
+instance A.FromJSON Office where
+  parseJSON o = A.withText "Office" f o where
+    f t = case t of
+      "H" -> return House
+      "S" -> return Senate
+      "P" -> return President
+      _   -> A.typeMismatch "Office" o
+
 partyToText :: Party -> Text
 partyToText Democrat        = "DEM"
 partyToText Republican      = "REP"
@@ -97,16 +104,6 @@ instance A.FromJSON Party where
       "UNK" -> return Unknown
       _     -> return Other --A.typeMismatch "Party" o
 
-{-
-data Candidate = Candidate
-  {
-    _candidate_id       :: CandidateID
-  , _candidate_name     :: Name
-  , _candidate_state    :: State
-  , _candidate_district :: District
-  , _candidate_party    :: Party
-  } deriving (Show, Generic)
--}
 
 instance A.FromJSON Candidate where
   parseJSON = A.genericParseJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
@@ -120,24 +117,10 @@ candidateFromResultJSON :: A.Value -> Either ByteString Candidate
 candidateFromResultJSON val = CandidateT
   <$> val |#| "candidate_id"
   <*> val |#| "name"
+  <*> val |#| "office"
   <*> val |#| "state"
   <*> val |#| "district_number"
   <*> val |#| "party"
-
-{-
-candidateHeaders :: [Text]
-candidateHeaders = ["ID","Name","State","District","Party"]
-
-candidateAligns = [TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft]
-
-candidateToRow :: Candidate -> [Text]
-candidateToRow (Candidate id n s d p) = [id, n, s, pack (show d), pack (show p)]
-
-candidateTable :: (Functor t, Foldable t) => t Candidate -> Text
-candidateTable x =
-  let cs = F.toList $ candidateToRow <$> x
-  in  TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone candidateAligns (candidateHeaders : cs)
--}
 
 data Committee = Committee
   {

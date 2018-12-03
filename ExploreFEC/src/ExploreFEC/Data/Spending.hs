@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module ExploreFEC.Data.Spending where
@@ -34,21 +35,21 @@ instance A.FromJSON CandidateSpending where
 instance A.ToJSON CandidateSpending where
   toJSON = A.genericToJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
 
-
 getHouseRaceSpending :: FEC.State -> FEC.District -> FEC.ElectionYear -> ClientM [CandidateSpending]
-getHouseRaceSpending state district year = do
-  candidates <- FEC.getHouseCandidates state district year
-  spending <- sequence (flip getCandidateSpending year <$> V.toList candidates)
+getHouseRaceSpending state district electionYear = do
+  candidates <- FEC.getHouseCandidates state district (Just electionYear) []
+  spending <- sequence (flip getCandidateSpending electionYear <$> V.toList candidates)
   liftIO $ sequence $ fmap (putStrLn . T.unpack . describeSpending) spending
   return spending
 
 getSenateRaceSpending :: FEC.State -> FEC.ElectionYear -> ClientM [CandidateSpending]
 getSenateRaceSpending state electionYear = do
-  candidates <- FEC.getSenateCandidates state electionYear
+  candidates <- FEC.getSenateCandidates state (Just electionYear) []
   spending <- sequence (flip getCandidateSpending electionYear <$> V.toList candidates)
   liftIO $ sequence $ fmap (putStrLn . T.unpack . describeSpending) spending
   return spending
 
+-- This might need some tweaking to get 4-year data
 getPresidentialRaceSpending :: FEC.ElectionYear -> ClientM [CandidateSpending]
 getPresidentialRaceSpending electionYear = do
   candidates <- FEC.getPresidentialCandidates electionYear
@@ -57,14 +58,14 @@ getPresidentialRaceSpending electionYear = do
   return spending
 
 getCandidateSpending :: FEC.Candidate -> FEC.ElectionYear -> ClientM CandidateSpending
-getCandidateSpending cand year = do
+getCandidateSpending cand electionYear = do
   let candidate_id = FEC._candidate_id cand
-      getDisbursements committee = FEC.getDisbursements (FEC._committee_id committee) year
-  committees <- FEC.getCommittees candidate_id [year]
+      getDisbursements committee = FEC.getDisbursements (FEC._committee_id committee) electionYear
+  committees <- FEC.getCommitteesByCandidate candidate_id (Just electionYear) []
 --  liftIO $ putStrLn $ "committees: " ++ show (FEC._committee_id <$> committees)
   disbursements <- fmap V.concat . sequence $ (getDisbursements <$> V.toList committees)
-  indExpenditures <- FEC.getIndependentExpendituresByCandidate candidate_id [year]
-  partyExpenditures <- FEC.getPartyExpenditures candidate_id [year]
+  indExpenditures <- FEC.getIndependentExpendituresByCandidate candidate_id [electionYear]
+  partyExpenditures <- FEC.getPartyExpenditures candidate_id [electionYear]
   return $ CandidateSpending cand disbursements indExpenditures partyExpenditures
 
 describeSpending :: CandidateSpending -> T.Text

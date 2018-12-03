@@ -46,7 +46,7 @@ data Party = Democrat | Republican | Independent | WorkingFamilies | Conservativ
 
 data Office = House | Senate | President deriving (Show, Read, Enum, Bounded, Eq, Ord, Generic)
 
-data CandidateT f = CandidateT
+data CandidateT f = Candidate
   {
     _candidate_id       :: C f CandidateID
   , _candidate_name     :: C f Name
@@ -62,18 +62,68 @@ type CandidateKey = B.PrimaryKey CandidateT Identity
 deriving instance Show Candidate
 deriving instance Eq Candidate
 
-instance B.Beamable CandidateT
-
 instance B.Table CandidateT where
   data PrimaryKey CandidateT f = CandidateKey (C f CandidateID) deriving (Generic)
   primaryKey = CandidateKey . _candidate_id
 
+deriving instance Show CandidateKey
+deriving instance Eq CandidateKey
+
+instance B.Beamable CandidateT
 instance B.Beamable (B.PrimaryKey CandidateT)
+
+data CommitteeT f = Committee
+  {
+    _committee_id         :: C f CommitteeID
+  , _committee_designaton :: C f Text
+  , _committee_name       :: C f Text
+  , _committee_type_full  :: C f Text
+  , _committee_type       :: C f Text -- we should make this its own type, prolly
+  } deriving (Generic)
+
+type Committee = CommitteeT Identity
+type CommitteeKey = B.PrimaryKey CommitteeT Identity
+
+deriving instance Show Committee
+deriving instance Eq Committee
+
+instance B.Table CommitteeT where
+  data PrimaryKey CommitteeT f = CommitteeKey (C f CommitteeID) deriving (Generic)
+  primaryKey = CommitteeKey . _committee_id
+
+deriving instance Show CommitteeKey
+deriving instance Eq CommitteeKey
+
+instance B.Beamable CommitteeT
+instance B.Beamable (B.PrimaryKey CommitteeT)
+
+data Candidate_x_CommitteeT f = Candidate_x_Committee
+  {
+    _candidate_x_committee_key          :: C f Int -- auto-incrementing key
+  , _candidate_x_committee_candidate_id :: B.PrimaryKey CandidateT f
+  , _candidate_x_committee_committee_id :: B.PrimaryKey CommitteeT f
+  } deriving (Generic)
+
+type Candidate_x_Committee = Candidate_x_CommitteeT Identity
+
+deriving instance Show Candidate_x_Committee
+deriving instance Eq Candidate_x_Committee
+
+instance B.Table Candidate_x_CommitteeT where
+  data PrimaryKey Candidate_x_CommitteeT f = Candidate_x_CommitteeKey (C f Int) deriving (Generic)
+  primaryKey = Candidate_x_CommitteeKey . _candidate_x_committee_key
+
+type Candidate_x_CommitteeKey = B.PrimaryKey Candidate_x_CommitteeT Identity
+
+instance B.Beamable Candidate_x_CommitteeT
+instance B.Beamable (B.PrimaryKey Candidate_x_CommitteeT)
 
 
 data OpenFEC_DB f = OpenFEC_DB
   {
-    _openFEC_DB_candidates :: f (B.TableEntity CandidateT)
+    _openFEC_DB_candidate :: f (B.TableEntity CandidateT)
+  , _openFEC_DB_committee :: f (B.TableEntity CommitteeT)
+  , _openFEC_DB_candidate_x_committee :: f (B.TableEntity Candidate_x_CommitteeT)
   } deriving (Generic)
 
 instance B.Database be OpenFEC_DB

@@ -38,8 +38,9 @@ baseUrl = BaseUrl Https "api.open.fec.gov" 443 "/v1"
 
 data FEC_Routes route = FEC_Routes
   {
-    _candidates :: route :- "candidates" :> QueryParam "api_key" Text :> QueryParams "candidate_status" Text :> QueryParams "office" Text :> QueryParams "party" Text :> QueryParams "election_year" Int :> QueryParam "state" Text :> QueryParam "district" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
-  , _committees :: route :- "candidate" :> Capture "candidate_id" Text :> "committees" :> QueryParam "api_key" Text :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
+    _candidates :: route :- "candidates" :> QueryParam "api_key" Text :> QueryParams "candidate_status" Text :> QueryParams "office" Text :> QueryParams "party" Text :> QueryParam "state" Text :> QueryParam "district" Int :>  QueryParam "election_year" Int :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
+  , _committees :: route :- "committees" :> QueryParam "api_key" Text :> QueryParam "election_year" Int :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
+  , _committeesByCandidate :: route :- "candidate" :> Capture "candidate_id" Text :> "committees" :> QueryParam "api_key" Text :> QueryParam "election_year" Int :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
   , _reports :: route :- "committee" :> Capture "committee_id" Text :> "reports" :> QueryParam "api_key" Text :> QueryParams "report_type" Text :> QueryParams "year" Int :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
   , _disbursements :: route :- "schedules" :> "schedule_b" :> QueryParam "api_key" Text :> QueryParam "committee_id" Text :> QueryParam "two_year_transaction_period" Int :> QueryParam "per_page" Int :> QueryParam "last_index" Int :> QueryParam "last_disbursement_date" LocalTime :> Get '[JSON] A.Value
   , _independent_expenditures :: route :- "schedules" :> "schedule_e" :> QueryParam "api_key" Text :> QueryParam "candidate_id" Text :> QueryParam "committee_id" Text :> QueryParams "cycle" Int :> QueryParam "last_index" Int :> QueryParam "last_expenditure_date" LocalTime :> Get '[JSON] A.Value
@@ -61,30 +62,39 @@ fecMaxPerPage = 100
 
 -- specific useful queries
 
-getCandidatesPage :: [FEC.Office] -> [FEC.Party] -> [FEC.ElectionYear] -> Maybe FEC.State -> Maybe FEC.District -> FEC.PageNumber -> ClientM FEC.Page
-getCandidatesPage offices parties electionYears stateM districtM page =
-  (_candidates fecClients) (Just fecApiKey) ["C"] (FEC.officeToText <$> offices) (FEC.partyToText <$> parties) electionYears stateM districtM (Just fecMaxPerPage) (Just page)
+getCandidatesPage :: [FEC.Office] -> [FEC.Party] -> Maybe FEC.State -> Maybe FEC.District -> Maybe FEC.ElectionYear -> [FEC.ElectionYear] -> FEC.PageNumber -> ClientM FEC.Page
+getCandidatesPage offices parties stateM districtM electionYearM cycles page =
+  (_candidates fecClients) (Just fecApiKey) ["C"] (FEC.officeToText <$> offices) (FEC.partyToText <$> parties) stateM districtM electionYearM cycles (Just fecMaxPerPage) (Just page)
 
-getCandidates :: [FEC.Office] -> [FEC.Party] -> [FEC.ElectionYear] ->  Maybe FEC.State -> Maybe FEC.District -> ClientM (Vector FEC.Candidate)
-getCandidates offices parties electionYears stateM districtM =
-    let getOnePage = getCandidatesPage offices parties electionYears stateM districtM
+getCandidates :: [FEC.Office] -> [FEC.Party] ->  Maybe FEC.State -> Maybe FEC.District -> Maybe FEC.ElectionYear ->  [FEC.ElectionYear] -> ClientM (Vector FEC.Candidate)
+getCandidates offices parties stateM districtM electionYearM cycles =
+    let getOnePage = getCandidatesPage offices parties stateM districtM electionYearM cycles
     in FEC.getAllPages Nothing FEC.NoneIfAnyFailed getOnePage FEC.candidateFromResultJSON
 
-getHouseCandidates :: FEC.State -> FEC.District -> FEC.ElectionYear -> ClientM (Vector FEC.Candidate)
-getHouseCandidates state district electionYear = getCandidates [FEC.House] [] [electionYear] (Just state) (Just district)
+getHouseCandidates :: FEC.State -> FEC.District -> Maybe FEC.ElectionYear -> [FEC.ElectionYear]  -> ClientM (Vector FEC.Candidate)
+getHouseCandidates state district electionYearM cycles = getCandidates [FEC.House] [] (Just state) (Just district) electionYearM cycles
 
-getSenateCandidates :: FEC.State -> FEC.ElectionYear -> ClientM (Vector FEC.Candidate)
-getSenateCandidates state electionYear = getCandidates [FEC.Senate] [] [electionYear] (Just state) Nothing
+getSenateCandidates :: FEC.State -> Maybe FEC.ElectionYear -> [FEC.ElectionYear] -> ClientM (Vector FEC.Candidate)
+getSenateCandidates state electionYearM cycles = getCandidates [FEC.Senate] [] (Just state) Nothing electionYearM cycles
 
 getPresidentialCandidates :: FEC.ElectionYear -> ClientM (Vector FEC.Candidate)
-getPresidentialCandidates electionYear = getCandidates [FEC.President] [] [electionYear] Nothing Nothing
+getPresidentialCandidates electionYear = getCandidates [FEC.President] [] Nothing Nothing (Just electionYear) []
 
-getCommitteesPage :: FEC.CandidateID -> [FEC.ElectionYear] -> FEC.PageNumber -> ClientM FEC.Page
-getCommitteesPage cid years page = (_committees fecClients) cid (Just fecApiKey) years (Just fecMaxPerPage) (Just page)
+getCommitteesPage :: Maybe FEC.ElectionYear -> [FEC.ElectionYear] -> FEC.PageNumber -> ClientM FEC.Page
+getCommitteesPage electionYearM cycles pageN = (_committees fecClients) (Just fecApiKey) electionYearM cycles (Just fecMaxPerPage) (Just pageN)
 
-getCommittees :: FEC.CandidateID -> [FEC.ElectionYear] -> ClientM (Vector FEC.Committee)
-getCommittees cid years =
-  let getOnePage = getCommitteesPage cid years
+getCommittees :: Maybe FEC.ElectionYear -> [FEC.ElectionYear] -> ClientM (Vector (FEC.Committee,[FEC.CandidateID]))
+getCommittees electionYearM cycles =
+  let getOnePage = getCommitteesPage electionYearM cycles
+  in FEC.getAllPages Nothing FEC.NoneIfAnyFailed getOnePage FEC.committeeWithCandidatesFromResultJSON
+
+getCommitteesByCandidatePage :: FEC.CandidateID -> Maybe FEC.ElectionYear -> [FEC.ElectionYear] -> FEC.PageNumber -> ClientM FEC.Page
+getCommitteesByCandidatePage cid electionYearM cycles page =
+  (_committeesByCandidate fecClients) cid (Just fecApiKey) electionYearM cycles (Just fecMaxPerPage) (Just page)
+
+getCommitteesByCandidate :: FEC.CandidateID -> Maybe FEC.ElectionYear -> [FEC.ElectionYear] -> ClientM (Vector FEC.Committee)
+getCommitteesByCandidate cid electionYearM cycles =
+  let getOnePage = getCommitteesByCandidatePage cid electionYearM cycles
   in FEC.getAllPages Nothing FEC.NoneIfAnyFailed getOnePage FEC.committeeFromResultJSON
 
 getReportsPage :: FEC.CommitteeID -> [Text] -> [FEC.ElectionYear] -> [FEC.ElectionCycle] -> FEC.PageNumber -> ClientM FEC.Page

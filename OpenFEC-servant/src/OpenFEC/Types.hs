@@ -42,19 +42,22 @@ import           Web.HttpApiData           (ToHttpApiData (..))
 import           OpenFEC.JsonUtils
 import qualified OpenFEC.Pagination        as FEC
 
-import           OpenFEC.Beam.Types        (Candidate, CandidateT (..),
-                                            Office (..), Party (..))
+import           OpenFEC.Beam.Types        (Amount, Candidate, CandidateID,
+                                            CandidateT (..), Committee (..),
+                                            CommitteeID, CommitteeT (..),
+                                            District, Name, Office (..),
+                                            Party (..), State)
 
 -- All fields are prefixed with entity name followed by field name.
 -- If the field name begins with entity name (e.g., "candidate_id" in Candidate) we begin with double underscore.
 -- So, field name to json key is straightforward
 
-type CandidateID = Text
-type CommitteeID = Text
-type Name = Text
-type State = Text
-type District = Int
-type Amount = Scientific
+--type CandidateID = Text
+--type CommitteeID = Text
+--type Name = Text
+--type State = Text
+--type District = Int
+--type Amount = Scientific
 type ElectionYear = Int
 type ElectionCycle = Int
 
@@ -89,7 +92,7 @@ partyToText Unknown         = "UNK"
 instance A.ToJSON Party where
   toJSON = A.String . partyToText
 
--- this one is used in Parsing from FEC data.  Maybe we can build a custom Prism?
+-- this one is used in Parsing from FEC data.  Maybe we can build a custom Prism? "Prism' Text Party" ?
 instance A.FromJSON Party where
   parseJSON o = A.withText "Party" f o where
     f t = case t of
@@ -114,7 +117,7 @@ instance A.ToJSON Candidate where
 --makeLenses ''Candidate
 
 candidateFromResultJSON :: A.Value -> Either ByteString Candidate
-candidateFromResultJSON val = CandidateT
+candidateFromResultJSON val = Candidate
   <$> val |#| "candidate_id"
   <*> val |#| "name"
   <*> val |#| "office"
@@ -122,14 +125,6 @@ candidateFromResultJSON val = CandidateT
   <*> val |#| "district_number"
   <*> val |#| "party"
 
-data Committee = Committee
-  {
-    _committee_id         :: CommitteeID
-  , _committee_designaton :: Text
-  , _committee_name       :: Text
-  , _committee_type_full  :: Text
-  , _committee_type       :: Text -- we should make this its own type, prolly
-  } deriving (Generic, Show)
 
 instance A.FromJSON Committee where
   parseJSON = A.genericParseJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
@@ -138,7 +133,7 @@ instance A.ToJSON Committee where
   toJSON = A.genericToJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
 
 
-makeLenses ''Committee
+--makeLenses ''Committee
 
 committeeFromResultJSON :: A.Value -> Either ByteString Committee
 committeeFromResultJSON val = Committee
@@ -148,18 +143,10 @@ committeeFromResultJSON val = Committee
   <*> val |#| "committee_type_full"
   <*> val |#| "committee_type"
 
-committeeHeaders :: [Text]
-committeeHeaders = ["Committee ID","Designation","Name","Type Full", "Type"]
-
-committeeAligns = [TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft]
-
-committeeToRow :: Committee -> [Text]
-committeeToRow (Committee id d n tf t) = [id, d, n, tf, t]
-
-committeeTable :: (Functor t, Foldable t) => t Committee -> Text
-committeeTable x =
-  let cs = F.toList $ committeeToRow <$> x
-  in  TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone committeeAligns (committeeHeaders : cs)
+committeeWithCandidatesFromResultJSON :: A.Value -> Either ByteString (Committee, [CandidateID])
+committeeWithCandidatesFromResultJSON val = (,)
+  <$> committeeFromResultJSON val
+  <*> val |#| "candidate_ids"
 
 amountToText :: Amount -> Text
 amountToText = pack . formatScientific Fixed (Just 2)

@@ -23,11 +23,13 @@ library
   -- other-modules: 
   -- other-extensions:
   build-depends:       base >=4.11 && <4.12
+                     , aeson
                      , beam-core
                      , beam-sqlite
                      , beam-migrate
                      , mtl
                      , text
+                     , time
                      , scientific
                      , sqlite-simple
                      , vector

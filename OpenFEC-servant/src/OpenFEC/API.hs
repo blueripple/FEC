@@ -16,9 +16,11 @@ import           Servant.API.Generic
 import           Servant.Client
 import           Servant.Client.Generic
 
+import           Control.Concurrent     (threadDelay)
 import           Control.Exception.Safe (throw)
 import           Control.Monad.IO.Class (liftIO)
 import qualified Control.Monad.State    as S
+import           Control.RateLimit      (RateLimit (..), rateLimitExecution)
 import qualified Data.Aeson             as A
 import           Data.ByteString.Char8  (pack)
 import qualified Data.Foldable          as F
@@ -27,7 +29,10 @@ import           Data.Maybe             (fromMaybe)
 import           Data.Monoid            ((<>))
 import           Data.Scientific        (Scientific)
 import           Data.Text              (Text)
+import qualified Data.Time.Clock        as C
 import           Data.Time.LocalTime    (LocalTime)
+import           Data.Time.Units        (Microsecond, TimeUnit,
+                                         fromMicroseconds)
 import           Data.Vector            (Vector)
 import qualified Data.Vector            as V
 
@@ -59,6 +64,21 @@ fecApiKey = "jjt0sf4z7FVpSAXoTndlnLKl0sDZUFcf3PQjpXrW"
 
 fecMaxPerPage :: Int
 fecMaxPerPage = 100
+
+data QueryLimit = QueryLimit { maxQueries :: Int, perTime :: C.DiffTime }
+fecQueryLimit = QueryLimit 120 (C.secondsToDiffTime 60)
+{-
+rateLimited  :: QueryLimit -> (a -> IO b) -> IO (a -> IO b)
+rateLimited (QueryLimit n per) action =
+  let diffMicros :: Integer = 1 + C.diffTimeToPicoseconds per `div` (fromIntegral $ 1000000 * n) -- 1 + to insure we are slightly slower
+      diffTime :: Microsecond = fromMicroseconds diffMicros
+  in rateLimitExecution diffTime action
+-}
+
+delayQueries :: QueryLimit -> IO ()
+delayQueries (QueryLimit n per) =
+  let sleepMicros = 1 + C.diffTimeToPicoseconds per `div` (fromIntegral $ 1000000 * n)
+  in threadDelay (fromIntegral sleepMicros)
 
 -- specific useful queries
 

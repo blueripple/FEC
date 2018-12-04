@@ -36,6 +36,7 @@ library
                      , http-api-data
                      , OpenFEC-beam
                      , pptable
+                     , rate-limit
                      , safe-exceptions
                      , scientific
                      , servant-client-core >= 0.15
@@ -44,6 +45,7 @@ library
                      , servant
                      , tabl
                      , time
+                     , time-units
                      , warp
                      , http-api-data
                      , transformers

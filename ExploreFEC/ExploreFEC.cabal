@@ -31,9 +31,11 @@ library
                      , lens
                      , lens-aeson
                      , pptable
+                     , rate-limit
                      , servant
                      , servant-client
                      , text
+                     , time-units
                      , transformers
                      , vector
                      , OpenFEC-servant
@@ -52,6 +54,7 @@ executable dataLoader
                      , sqlite-simple
                      , http-client >= 0.5.12
                      , http-client-tls
+                     , lens
                      , pptable
                      , servant-client
                      , split

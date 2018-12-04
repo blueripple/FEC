@@ -1,12 +1,15 @@
-{-# LANGUAGE ExplicitForAll      #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE ExplicitForAll            #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE GADTs                     #-}
+--{-# LANGUAGE ImpredicativeTypes        #-}
+{-# LANGUAGE NoMonoLocalBinds          #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilies              #-}
 module Main where
 
 
@@ -34,6 +37,7 @@ import           Network.HTTP.Client.TLS          (tlsManagerSettings)
 import           Servant.Client                   (ClientM, ServantError,
                                                    mkClientEnv, runClientM)
 
+import           Control.Lens                     ((^.))
 import           Control.Monad                    (forM_, mapM_, sequence)
 import           Control.Monad.IO.Class           (liftIO)
 import           Data.Aeson                       (encodeFile)
@@ -107,34 +111,62 @@ loadCommittees runServant dbConn getCommsWith electionYears = do
         totalXRows <- B.runSelectReturningOne $ B.select countCxCRows
         liftIO $ putStrLn $ "Loaded " ++ maybe "0 (Error counting)" show totalXRows ++ " rows."
 
+{-
+loadSpendingForCandidate ::
+  (forall a. ClientM a -> IO (Either ServantError a)) ->
+  SL.Connection ->
+  (FEC.CandidateID -> FEC.ElectionYear -> ClientM (V.Vector FEC.Disbursement))
+  -> FEC.Candidate
+  -> FEC.ElectionYear
+  -> IO ()
+loadSpendingForCandidate runServant dbConn getDisbursements candidate electionYear = do
+  let getAllCxC = B.all_ $ FEC._openFEC_DB_candidate_x_committee FEC.openFEC_DB
+      committeeIDsForCandidate x = B.filter_ (FEC._candidate_x_committee_candidate_id B.==. (B.val_ $ FEC._candidate_id x)) getAllCxC
+  cxcs <- B.runBeamSqlite dbConn $ B.runSelectReturningList $ B.select $ committeeIDsForCandidateID candidate
+  let committeeIDs = FEC._candidate_x_committee_committee_id <$> cxcs
+  putStrLn $ "Querying OpenFEC for spending by/for " ++ T.unpack (FEC._candidate_name candidate)
+  candidateSpending <- getCandidateSpending' candidate committeeIDs electionYear
+  putStrLn $ T.unpack $ describeSpending candidateSpending
+-}
 
 
 openFEC_SqliteFile = "../DBs/FEC-test.db"
 
 main :: IO ()
 main = do
-  let raceTypes = [FEC.House]
-      parties = [FEC.Democrat, FEC.Republican, FEC.Green]
-      electionYears = [2018]
---      query = FEC.getCandidates raceType parties electionYears
---      query = FEC.getFilings "H8NY11113" True [2018]
---      query = FEC.getCommittees "H8NY11113" []
---      query = FEC.getReports "C00652248" [] [] []
---      query = FEC.getDisbursements "C00652248" 2018
---      query = FEC.getIndependentExpendituresByCandidate "H6NY11174" [2018]
---      query = FEC.getPartyExpenditures "H0CA27085" []
---      query = getHouseRaceSpending "NY" 11 2018
---      query = getSenateRaceSpending "FL" 2018
-      managerSettings = tlsManagerSettings --{ managerModifyRequest = \req -> print req >> return req }
+  let electionYears = [2018]
+      doUpdateCandidates = False
+      doUpdateCommittees = False
+      doUpdateSpendingWorkTable = True
+      doIf doIt action = if doIt then action else return ()
+      managerSettings = tlsManagerSettings { managerModifyRequest = \req -> FEC.delayQueries FEC.fecQueryLimit >> {- putStrLn req >> -}  return req }
   manager <- newManager managerSettings
   dbConn <- SL.open openFEC_SqliteFile
   let clientEnv = mkClientEnv manager FEC.baseUrl
-      runServant :: ClientM a -> IO (Either ServantError a)
+      runBeam = B.runBeamSqlite
+  let runServant :: forall a. ClientM a -> IO (Either ServantError a)
       runServant x = runClientM x clientEnv
   putStrLn $ "Doing DB migrations, if necessary."
   B.runBeamSqliteDebug putStrLn dbConn $ autoMigrate migrationBackend openFEC_DbMigratable
-  loadCandidates runServant dbConn (\x -> FEC.getCandidates [] [] Nothing Nothing Nothing x) [2018]
-  loadCommittees runServant dbConn (FEC.getCommittees Nothing) [2018]
+  putStrLn $ "updating initial candidate and committee tables, if necessary"
+  doIf doUpdateCandidates $ loadCandidates runServant dbConn (\x -> FEC.getCandidates [] [] Nothing Nothing Nothing x) [2018]
+  doIf doUpdateCommittees $ loadCommittees runServant dbConn (FEC.getCommittees Nothing) [2018]
+  putStrLn $ "building tracking table for remaining transaction loading work, if necessary"
+  doIf doUpdateSpendingWorkTable $ runBeam dbConn $ do
+    candidates <- B.runSelectReturningList $ B.select $ B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
+    let candidateIds = fmap (FEC.CandidateIdOnly . FEC.CandidateKey . FEC._candidate_id) candidates
+    mapM_ (B.runInsert . B.insert (FEC._openFEC_DB_candidate_to_load FEC.openFEC_DB) . B.insertValues) $ chunksOf 200 candidateIds
+  candidatesToLoad <- runBeam dbConn $ B.runSelectReturningList $ B.select $ do
+    let getAllCandidates = B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
+        getAllCandidatesToLoad = B.all_ (FEC._openFEC_DB_candidate_to_load FEC.openFEC_DB)
+    candidate <- getAllCandidates
+    idToLoad <- getAllCandidatesToLoad
+    B.guard_ (FEC._candidate_id_only idToLoad `B.references_` candidate)
+    return candidate
+
+  putStrLn $ "Found " ++ (show $ length candidatesToLoad) ++ " remaining candidates to load data for."
+
+
 
 {-
   result <- runClientM query clientEnv

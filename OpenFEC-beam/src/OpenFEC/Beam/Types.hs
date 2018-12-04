@@ -1,7 +1,9 @@
+{-# LANGUAGE DeriveDataTypeable    #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE ImpredicativeTypes    #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -20,10 +22,16 @@ import qualified Database.Beam.Query       as B
 
 
 import           Control.Monad.Identity    (Identity)
+import qualified Data.Aeson                as A
+import qualified Data.Aeson.Types          as A
+import           Data.Data                 (Data)
 import           Data.Scientific           (Scientific)
 import           Data.Text                 (Text)
+import           Data.Time.Clock           (UTCTime)
+import           Data.Time.LocalTime       (LocalTime, utc, utcToLocalTime)
 import qualified Data.Vector               as V
 import           GHC.Generics              (Generic)
+
 
 -- query Utilities
 runReturningVector :: (B.MonadBeam syntax be handle m, B.FromBackendRow be x) => syntax -> m (V.Vector x)
@@ -56,8 +64,18 @@ data CandidateT f = Candidate
   , _candidate_party    :: C f Party
   } deriving (Generic)
 
+Candidate (B.LensFor candidate_id) (B.LensFor candidate_name)
+  (B.LensFor candidate_office) (B.LensFor candidate_state)
+  (B.LensFor candidate_district) (B.LensFor candidate_party) = B.tableLenses
+
 type Candidate = CandidateT Identity
 type CandidateKey = B.PrimaryKey CandidateT Identity
+
+instance A.FromJSON CandidateKey where
+  parseJSON = fmap CandidateKey . A.parseJSON
+
+instance A.ToJSON CandidateKey where
+  toJSON (CandidateKey x) = A.toJSON x
 
 deriving instance Show Candidate
 deriving instance Eq Candidate
@@ -81,8 +99,19 @@ data CommitteeT f = Committee
   , _committee_type       :: C f (Maybe Text) -- we should make this its own type, prolly
   } deriving (Generic)
 
+Committee (B.LensFor committee_id) (B.LensFor committee_designation)
+  (B.LensFor committee_name) (B.LensFor committee_type_full)
+  (B.LensFor committee_type) = B.tableLenses
+
+
 type Committee = CommitteeT Identity
 type CommitteeKey = B.PrimaryKey CommitteeT Identity
+
+instance A.FromJSON CommitteeKey where
+  parseJSON = fmap CommitteeKey . A.parseJSON
+
+instance A.ToJSON CommitteeKey where
+  toJSON (CommitteeKey x) = A.toJSON x
 
 deriving instance Show Committee
 deriving instance Eq Committee
@@ -93,6 +122,7 @@ instance B.Table CommitteeT where
 
 deriving instance Show CommitteeKey
 deriving instance Eq CommitteeKey
+deriving instance Ord CommitteeKey
 
 instance B.Beamable CommitteeT
 instance B.Beamable (B.PrimaryKey CommitteeT)
@@ -117,16 +147,130 @@ type Candidate_x_CommitteeKey = B.PrimaryKey Candidate_x_CommitteeT Identity
 instance B.Beamable Candidate_x_CommitteeT
 instance B.Beamable (B.PrimaryKey Candidate_x_CommitteeT)
 
-
 committeesCandidateRelationship :: B.ManyToMany OpenFEC_DB CandidateT CommitteeT
 committeesCandidateRelationship = B.manyToMany_ (_openFEC_DB_candidate_x_committee openFEC_DB) _candidate_x_committee_candidate_id _candidate_x_committee_committee_id
+
+data DisbursementT f = Disbursement
+  {
+    _disbursement_date              :: C f LocalTime
+  , _disbursement_amount            :: C f Amount
+  , _disbursement_purpose_Category  :: C f Text
+  , _disbursement_recipient_name    :: C f (Maybe Text)
+  , _disbursement_committee_id      :: B.PrimaryKey CommitteeT f
+  , _disbursement_line_number_label :: C f Text
+  , _disbursement_sub_id            :: C f Int
+  } deriving (Generic)
+
+Disbursement (B.LensFor disbursement_date) (B.LensFor disbursement_amount)
+  (B.LensFor disbursement_purpose_category) (B.LensFor disbursement_recipient_name)
+  (CommitteeKey (B.LensFor disbursement_committee_id)) (B.LensFor disbursement_line_number_label)
+  (B.LensFor disbursement_sub_id) = B.tableLenses
+
+type Disbursement = DisbursementT Identity
+type DisbursementKey = B.PrimaryKey DisbursementT Identity
+
+deriving instance Show Disbursement
+deriving instance Eq Disbursement
+
+instance B.Table DisbursementT where
+  data PrimaryKey DisbursementT f = DisbursementKey (C f Int) deriving (Generic)
+  primaryKey = DisbursementKey . _disbursement_sub_id
+
+instance B.Beamable DisbursementT
+instance B.Beamable (B.PrimaryKey DisbursementT)
+
+data SpendingIntention = Support | Oppose deriving (Generic, Show, Read, Enum, Ord, Bounded, Eq, Data)
+
+data IndExpenditureT f  = IndExpenditure
+  {
+    _indExpenditure_date                     :: C f LocalTime
+  , _indExpenditure_amount                   :: C f Amount
+  , _indExpenditure_amount_from_ytd          :: C f Amount
+  , _indExpenditure_support_oppose_indicator :: C f SpendingIntention
+  , _indExpenditure_office_total_ytd         :: C f Amount
+  , _indExpenditure_category_code_full       :: C f (Maybe Text)
+  , _indExpenditure_description              :: C f (Maybe Text)
+  , _indExpenditure_candidate_id             :: B.PrimaryKey CandidateT f
+  , _indExpenditure_committee_id             :: B.PrimaryKey CommitteeT f
+  , _indExpenditure_sub_id                   :: C f Int
+  } deriving (Generic)
+
+IndExpenditure (B.LensFor indExpenditure_date) (B.LensFor indExpenditure_amount)
+  (B.LensFor indExpenditure_amount_from_ytd) (B.LensFor indExpenditure_support_oppose_indicator)
+  (B.LensFor indExpenditure_office_total_ytd) (B.LensFor indExpenditure_category_code_full)
+  (B.LensFor indExpenditure_description) (CandidateKey (B.LensFor indExpenditure_candidate_id))
+  (CommitteeKey (B.LensFor indExpenditure_committee_id)) (B.LensFor indExpenditure_sub_id) = B.tableLenses
+
+type IndExpenditure = IndExpenditureT Identity
+type IndExpenditureKey = B.PrimaryKey IndExpenditureT Identity
+
+deriving instance Show IndExpenditure
+deriving instance Eq IndExpenditure
+
+instance B.Table IndExpenditureT where
+  data PrimaryKey IndExpenditureT f = IndExpenditureKey (C f Int) deriving (Generic)
+  primaryKey = IndExpenditureKey . _indExpenditure_sub_id
+
+instance B.Beamable IndExpenditureT
+instance B.Beamable (B.PrimaryKey IndExpenditureT)
+
+data PartyExpenditureT f = PartyExpenditure
+  {
+    _partyExpenditure_date           :: C f LocalTime
+  , _partyExpenditure_amount         :: C f Amount
+  , _partyExpenditure_purpose_full   :: C f Text
+  , _partyExpenditure_committee_id   :: B.PrimaryKey CommitteeT f
+  , _partyExpenditure_committee_name :: C f Text
+  , _partyExpenditure_sub_id         :: C f Int
+  } deriving (Generic)
+
+PartyExpenditure (B.LensFor partyExpenditure_date) (B.LensFor partyExpenditure_amount)
+  (B.LensFor partyExpenditure_purpose_full) (CommitteeKey (B.LensFor partyExpenditure_committee_id))
+  (B.LensFor partyExpenditure_committee_name) (B.LensFor partyExpenditure_sub_id) = B.tableLenses
+
+type PartyExpenditure = PartyExpenditureT Identity
+type PartyExpenditureKey = B.PrimaryKey PartyExpenditureT Identity
+
+deriving instance Show PartyExpenditure
+deriving instance Eq PartyExpenditure
+
+instance B.Table PartyExpenditureT where
+  data PrimaryKey PartyExpenditureT f = PartyExpenditureKey (C f Int) deriving (Generic)
+  primaryKey = PartyExpenditureKey . _partyExpenditure_sub_id
+
+instance B.Beamable PartyExpenditureT
+instance B.Beamable (B.PrimaryKey PartyExpenditureT)
+
+data CandidateIdOnlyT f = CandidateIdOnly { _candidate_id_only :: B.PrimaryKey CandidateT f } deriving (Generic)
+
+CandidateIdOnly (CandidateKey (B.LensFor candidate_id_only)) = B.tableLenses
+
+type CandidateIdOnly = CandidateIdOnlyT Identity
+
+deriving instance Show CandidateIdOnly
+
+instance B.Table CandidateIdOnlyT where
+  data PrimaryKey CandidateIdOnlyT f = CandidateIdOnlyKey (B.PrimaryKey CandidateT f) deriving (Generic)
+  primaryKey = CandidateIdOnlyKey . _candidate_id_only
+
+instance B.Beamable CandidateIdOnlyT
+instance B.Beamable (B.PrimaryKey CandidateIdOnlyT)
 
 data OpenFEC_DB f = OpenFEC_DB
   {
     _openFEC_DB_candidate :: f (B.TableEntity CandidateT)
   , _openFEC_DB_committee :: f (B.TableEntity CommitteeT)
   , _openFEC_DB_candidate_x_committee :: f (B.TableEntity Candidate_x_CommitteeT)
+  , _openFEC_DB_disbursement :: f (B.TableEntity DisbursementT)
+  , _openFEC_DB_indExpenditure :: f (B.TableEntity IndExpenditureT)
+  , _openFEC_DB_partyExpenditure :: f (B.TableEntity PartyExpenditureT)
+  , _openFEC_DB_candidate_to_load :: f (B.TableEntity CandidateIdOnlyT)
   } deriving (Generic)
+
+OpenFEC_DB (B.TableLens openFEC_DB_candidate) (B.TableLens openFEC_DB_committee)
+  (B.TableLens openFEC_DB_candidate_x_committee) (B.TableLens openFEC_DB_disbursement)
+  (B.TableLens openFEC_DB_indExpenditure) (B.TableLens openFEC_DB_partyExpenditure)
+  (B.TableLens openFEC_DB_candidate_to_load) = B.dbLenses
 
 instance B.Database be OpenFEC_DB
 

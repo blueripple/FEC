@@ -36,18 +36,12 @@ import           Data.Time.LocalTime       (LocalTime, utc, utcToLocalTime)
 import           Data.Vector               (Vector, toList)
 import           GHC.Generics              (Generic)
 import qualified Text.PrettyPrint.Tabulate as PP
-import qualified Text.Tabl                 as TT
 import           Web.HttpApiData           (ToHttpApiData (..))
 
 import           OpenFEC.JsonUtils
 import qualified OpenFEC.Pagination        as FEC
 
-import           OpenFEC.Beam.Types        (Amount, Candidate, CandidateID,
-                                            CandidateT (..), Committee (..),
-                                            CommitteeID, CommitteeT (..),
-                                            District, Name, Office (..),
-                                            Party (..), State)
-
+import           OpenFEC.Beam.Types
 -- All fields are prefixed with entity name followed by field name.
 -- If the field name begins with entity name (e.g., "candidate_id" in Candidate) we begin with double underscore.
 -- So, field name to json key is straightforward
@@ -114,6 +108,7 @@ instance A.FromJSON Candidate where
 instance A.ToJSON Candidate where
   toJSON = A.genericToJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
 
+
 --makeLenses ''Candidate
 
 candidateFromResultJSON :: A.Value -> Either ByteString Candidate
@@ -131,7 +126,6 @@ instance A.FromJSON Committee where
 
 instance A.ToJSON Committee where
   toJSON = A.genericToJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
-
 
 --makeLenses ''Committee
 
@@ -162,7 +156,6 @@ utcTimeToText = pack . formatTime defaultTimeLocale "%F"
 
 data Report = Report
   {
-
     _report_total_receipts_period         :: Amount
   , _report_total_receipts_ytd            :: Amount
   , _report_total_contributions_period    :: Amount
@@ -179,7 +172,7 @@ instance A.FromJSON Report where
 instance A.ToJSON Report where
   toJSON = A.genericToJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
 
-makeLenses ''Report
+--makeLenses ''Report
 
 reportFromResultJSON :: A.Value -> Either ByteString Report
 reportFromResultJSON val = Report
@@ -192,42 +185,6 @@ reportFromResultJSON val = Report
   <*> val |#| "cash_on_hand_beginning_period"
   <*> val |#| "receipt_date"
 
-reportHeaders :: [Text]
-reportHeaders = ["Receipts", "Receipts (YTD)", "Contributions", "Contributions (YTD)", "Disbursements", "Disbursements (YTD)",
-                "Cash On Hand", "Receipt Date"]
-
-
-reportAligns = [TT.AlignRight, TT.AlignRight, TT.AlignRight, TT.AlignRight, TT.AlignRight, TT.AlignRight,
-                TT.AlignRight, TT.AlignRight]
-
-reportToRow :: Report -> [Text]
-reportToRow (Report trp try tcp tcy tdp tdy coh rd) =
-  [
-    amountToText trp
-  , amountToText try
-  , amountToText tcp
-  , amountToText tcy
-  , amountToText tdp
-  , amountToText tdy
-  , amountToText coh
-  , localTimeToText rd
-  ]
-
-reportTable :: (Functor t, Foldable t) => t Report -> Text
-reportTable x =
-  let fs = F.toList $ reportToRow <$> x
-  in TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone reportAligns (reportHeaders : fs)
-
-data Disbursement = Disbursement
-  {
-    _disbursement_date              :: LocalTime
-  , _disbursement_amount            :: Amount
-  , _disbursement_purpose_Category  :: Text
-  , _disbursement_recipient_name    :: Maybe Text
-  , _disbursement_committee_id      :: CommitteeID
-  , _disbursement_line_number_label :: Text
-  } deriving (Generic, Show)
-
 
 instance A.FromJSON Disbursement where
   parseJSON = A.genericParseJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
@@ -235,7 +192,7 @@ instance A.FromJSON Disbursement where
 instance A.ToJSON Disbursement where
   toJSON = A.genericToJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
 
-makeLenses ''Disbursement
+--makeLenses ''Disbursement
 
 disbursementFromResultJSON :: A.Value -> Either ByteString Disbursement
 disbursementFromResultJSON val = Disbursement
@@ -245,21 +202,8 @@ disbursementFromResultJSON val = Disbursement
   <*> val |#| "recipient_name"
   <*> val |#| "committee_id"
   <*> val |#| "line_number_label"
+  <*> val |#| "sub_id"
 
-disbursementHeaders :: [Text]
-disbursementHeaders = ["Date", "Amount", "Purpose", "Recipient", "Committee ID", "Line Number Label"]
-
-disbursementAligns = [TT.AlignLeft, TT.AlignRight, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft]
-
-disbursementToRow :: Disbursement -> [Text]
-disbursementToRow (Disbursement d a pc rn ci lnl)  = [localTimeToText d, amountToText a, pc, maybe "N/A" id rn, ci, lnl]
-
-disbursementTable :: (Functor t, Foldable t) => t Disbursement -> Text
-disbursementTable x =
-  let ds = F.toList $ disbursementToRow <$> x
-  in TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone disbursementAligns (disbursementHeaders : ds)
-
-data SpendingIntention = Support | Oppose deriving (Generic, Show, Eq, Data)
 instance PP.CellValueFormatter SpendingIntention
 
 instance A.ToJSON SpendingIntention where
@@ -273,23 +217,11 @@ instance A.FromJSON SpendingIntention where
       "O" -> return Oppose
       _   -> A.typeMismatch "SpendingIntention" o
 
-data IndExpenditure = IndExpenditure
-  {
-    _indExpenditure_date                     :: LocalTime
-  , _indExpenditure_amount                   :: Amount
-  , _indExpenditure_amount_from_ytd          :: Amount
-  , _indExpenditure_support_oppose_indicator :: SpendingIntention
-  , _indExpenditure_office_total_ytd         :: Amount
-  , _indExpenditure_category_code_full       :: Maybe Text
-  , _indExpenditure_description              :: Maybe Text
-  , _indExpenditure_candidate_id             :: CandidateID
-  , _indExpenditure_committee_id             :: CommitteeID
-  , _indExpenditure_committee_name           :: Text
-  } deriving (Generic, Show, Eq)
 
 instance PP.CellValueFormatter LocalTime
 instance PP.CellValueFormatter Scientific
 instance PP.CellValueFormatter Text
+
 
 instance A.FromJSON IndExpenditure where
   parseJSON = A.genericParseJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
@@ -297,9 +229,10 @@ instance A.FromJSON IndExpenditure where
 instance A.ToJSON IndExpenditure where
   toJSON = A.genericToJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
 
+
 instance PP.Tabulate IndExpenditure PP.DoNotExpandWhenNested
 
-makeLenses ''IndExpenditure
+--makeLenses ''IndExpenditure
 
 indExpenditureFromResultJSON :: A.Value -> Either ByteString IndExpenditure
 indExpenditureFromResultJSON val = IndExpenditure
@@ -312,32 +245,8 @@ indExpenditureFromResultJSON val = IndExpenditure
   <*> val |#| "expenditure_description"
   <*> tryKeys ["candidate","candidate_id"] val
   <*> val |#| "committee_id"
-  <*> tryKeys ["committee","name"]  val
+  <*> val |#| "sub_id"
 
-{-
-indExpenditureHeaders :: [Text]
-indExpenditureHeaders = ["Date", "Amount", "Intention", "YTD", "Category", "Description", "Candidate ID", "Committee ID", "Committee Name"]
-
-indExpenditureAligns = [TT.AlignLeft, TT.AlignRight, TT.AlignLeft, TT.AlignRight, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft]
-
-indExpenditureToRow :: IndExpenditure -> [Text]
-indExpenditureToRow (IndExpenditure d a so ytd ccf ed cais coi cn)  =
-  [localTimeToText d, amountToText a, pack (show so), amountToText ytd, maybe "N/A" id ccf, maybe "N/A" id ed, cais, coi, cn]
-
-indExpenditureTable :: (Functor t, Foldable t) => t IndExpenditure -> Text
-indExpenditureTable x =
-  let ds = F.toList $ indExpenditureToRow <$> x
-  in TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone indExpenditureAligns (indExpenditureHeaders : ds)
--}
-
-data PartyExpenditure = PartyExpenditure
-  {
-    _partyExpenditure_date           :: UTCTime
-  , _partyExpenditure_amount         :: Amount
-  , _partyExpenditure_purpose_full   :: Text
-  , _partyExpenditure_committee_id   :: CommitteeID
-  , _partyExpenditure_committee_name :: Text
-  } deriving (Generic, Show)
 
 instance A.FromJSON PartyExpenditure where
   parseJSON = A.genericParseJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
@@ -345,25 +254,13 @@ instance A.FromJSON PartyExpenditure where
 instance A.ToJSON PartyExpenditure where
   toJSON = A.genericToJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
 
-makeLenses ''PartyExpenditure
+--makeLenses ''PartyExpenditure
 
 partyExpenditureFromResultJSON :: A.Value -> Either ByteString PartyExpenditure
 partyExpenditureFromResultJSON val = PartyExpenditure
-  <$> val |#| "expenditure_date"
+  <$> fmap (utcToLocalTime utc) (val |#| "expenditure_date")
   <*> val |#| "expenditure_amount"
   <*> val |#| "expenditure_purpose_full"
   <*> tryKeys ["committee","committee_id"] val -- val |#| "committee_id"
   <*> tryKeys ["committee","name"] val -- val |#| "committee_name"
-
-partyExpenditureHeaders :: [Text]
-partyExpenditureHeaders = ["Date", "Amount", "Purpose", "Committee ID", "Committee Name"]
-
-partyExpenditureAligns = [TT.AlignLeft, TT.AlignRight, TT.AlignLeft, TT.AlignLeft, TT.AlignLeft]
-
-partyExpenditureToRow :: PartyExpenditure -> [Text]
-partyExpenditureToRow (PartyExpenditure d a pf ci cn)  = [utcTimeToText d, amountToText a, pf, ci, cn]
-
-partyExpenditureTable :: (Functor t, Foldable t) => t PartyExpenditure -> Text
-partyExpenditureTable x =
-  let ds = F.toList $ partyExpenditureToRow <$> x
-  in TT.tabl TT.EnvAscii TT.DecorAll TT.DecorNone partyExpenditureAligns (partyExpenditureHeaders : ds)
+  <*> val |#| "sub_id"

@@ -11,7 +11,8 @@ import qualified Database.Beam.Sqlite             as B
 import qualified Database.Beam.Sqlite.Syntax      as B
 import qualified Database.SQLite.Simple.FromField as SL
 
-import           OpenFEC.Beam.Types               (Office, Party)
+import           OpenFEC.Beam.Types               (Office, Party,
+                                                   SpendingIntention)
 
 import           Text.Read                        (readMaybe)
 
@@ -20,6 +21,9 @@ instance B.HasSqlValueSyntax be String => B.HasSqlValueSyntax be Party where
   sqlValueSyntax = B.autoSqlValueSyntax
 
 instance B.HasSqlValueSyntax be String => B.HasSqlValueSyntax be Office where
+  sqlValueSyntax = B.autoSqlValueSyntax
+
+instance B.HasSqlValueSyntax be String => B.HasSqlValueSyntax be SpendingIntention where
   sqlValueSyntax = B.autoSqlValueSyntax
 
 -- marshall back by reading as String and then readMaybe
@@ -37,8 +41,16 @@ instance SL.FromField Office where
       Nothing -> SL.returnError SL.ConversionFailed f "Could not 'read' value for Office"
       Just x -> pure x
 
+instance SL.FromField SpendingIntention where
+  fromField f = do
+    x <- readMaybe <$> SL.fromField f
+    case x of
+      Nothing -> SL.returnError SL.ConversionFailed f "Could not 'read' value for Office"
+      Just x -> pure x
+
 instance B.FromBackendRow B.Sqlite Party
 instance B.FromBackendRow B.Sqlite Office
+instance B.FromBackendRow B.Sqlite SpendingIntention
 
 instance B.HasDefaultSqlDataType B.SqliteDataTypeSyntax Party where
   defaultSqlDataType _ _ = B.sqliteTextType
@@ -46,9 +58,12 @@ instance B.HasDefaultSqlDataType B.SqliteDataTypeSyntax Party where
 instance B.HasDefaultSqlDataType B.SqliteDataTypeSyntax Office where
   defaultSqlDataType _ _ = B.sqliteTextType
 
+instance B.HasDefaultSqlDataType B.SqliteDataTypeSyntax SpendingIntention where
+  defaultSqlDataType _ _ = B.sqliteTextType
+
 instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax Party
 instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax Office
-
+instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax SpendingIntention
 
 {-
 --This doesn't belong here but is currently unused and I want to have a note of the syntax

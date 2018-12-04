@@ -75,10 +75,10 @@ instance B.Beamable (B.PrimaryKey CandidateT)
 data CommitteeT f = Committee
   {
     _committee_id         :: C f CommitteeID
-  , _committee_designaton :: C f Text
-  , _committee_name       :: C f Text
-  , _committee_type_full  :: C f Text
-  , _committee_type       :: C f Text -- we should make this its own type, prolly
+  , _committee_designaton :: C f (Maybe Text)
+  , _committee_name       :: C f (Maybe Text)
+  , _committee_type_full  :: C f (Maybe Text)
+  , _committee_type       :: C f (Maybe Text) -- we should make this its own type, prolly
   } deriving (Generic)
 
 type Committee = CommitteeT Identity
@@ -99,8 +99,7 @@ instance B.Beamable (B.PrimaryKey CommitteeT)
 
 data Candidate_x_CommitteeT f = Candidate_x_Committee
   {
-    _candidate_x_committee_key          :: C f Int -- auto-incrementing key
-  , _candidate_x_committee_candidate_id :: B.PrimaryKey CandidateT f
+    _candidate_x_committee_candidate_id :: B.PrimaryKey CandidateT f
   , _candidate_x_committee_committee_id :: B.PrimaryKey CommitteeT f
   } deriving (Generic)
 
@@ -110,14 +109,17 @@ deriving instance Show Candidate_x_Committee
 deriving instance Eq Candidate_x_Committee
 
 instance B.Table Candidate_x_CommitteeT where
-  data PrimaryKey Candidate_x_CommitteeT f = Candidate_x_CommitteeKey (C f Int) deriving (Generic)
-  primaryKey = Candidate_x_CommitteeKey . _candidate_x_committee_key
+  data PrimaryKey Candidate_x_CommitteeT f = Candidate_x_CommitteeKey (B.PrimaryKey CandidateT f) (B.PrimaryKey CommitteeT f) deriving (Generic)
+  primaryKey x = Candidate_x_CommitteeKey (_candidate_x_committee_candidate_id x) (_candidate_x_committee_committee_id x)
 
 type Candidate_x_CommitteeKey = B.PrimaryKey Candidate_x_CommitteeT Identity
 
 instance B.Beamable Candidate_x_CommitteeT
 instance B.Beamable (B.PrimaryKey Candidate_x_CommitteeT)
 
+
+committeesCandidateRelationship :: B.ManyToMany OpenFEC_DB CandidateT CommitteeT
+committeesCandidateRelationship = B.manyToMany_ (_openFEC_DB_candidate_x_committee openFEC_DB) _candidate_x_committee_candidate_id _candidate_x_committee_committee_id
 
 data OpenFEC_DB f = OpenFEC_DB
   {

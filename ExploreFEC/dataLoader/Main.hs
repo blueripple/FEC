@@ -1,13 +1,12 @@
-{-# LANGUAGE ExplicitForAll            #-}
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE FlexibleInstances         #-}
-{-# LANGUAGE GADTs                     #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE TypeApplications          #-}
-{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE ExplicitForAll      #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 module Main where
 
 
@@ -96,25 +95,14 @@ loadCommittees runServant dbConn getCommsWith electionYears = do
 --        let candidatesByCommitteeMap = M.fromList . fmap (\(comm,cands) -> (FEC._committee_id comm, cands)) $ committeeWithCandidatesL
         forM_ committeeWithCandidatesL $ \(committee, candidate_ids) -> do
           let getAllCandidates = B.all_ $ FEC._openFEC_DB_candidate FEC.openFEC_DB
-              getAllCommittees = B.all_ $ FEC._openFEC_DB_committee FEC.openFEC_DB
-              byCandidateIDs x = F.foldl' (\conds cid -> conds B.||. (FEC._candidate_id x B.==. pure cid)) (pure False) candidate_ids
-              byCommitteeID x = (FEC._committee_id x B.==. pure (FEC._committee_id committee))
+              byCandidateIDs x = F.foldl' (\conds cid -> conds B.||. (FEC._candidate_id x B.==. B.val_ cid)) (B.val_ False) candidate_ids
               selectByCandidateIDs = B.filter_ byCandidateIDs getAllCandidates
-              selectByCommitteeID = B.filter_ byCommitteeID getAllCommittees
           candidates <- B.runSelectReturningList $ B.select selectByCandidateIDs
-          committeeM <- B.runSelectReturningOne $ B.select $ selectByCommitteeID
-          let --toExpr :: FEC.CandidateT f -> FEC.CommitteeT f -> FEC.Candidate_x_CommitteeT f
-              toExpr ca co = FEC.Candidate_x_Committee B.default_ (B.pk ca) (B.pk co)
-          let toInsert = case committeeM of
-                Nothing   -> []
-                Just comm -> fmap (flip toExpr comm) candidates
-{-
-                  fmap (\cand ->
-          let toExpr :: FEC.CommitteeT f -> FEC.CandidateT f -> FEC.Candidate_x_CommitteeT f
-              toExpr comm cand = FEC.Candidate_x_Committee B.default_ (B.pk cand) (B.pk comm)
--}
-          liftIO $ putStr $ (T.unpack $ FEC._committee_name committee) ++ " (" ++ (show $ length candidates) ++ ")..."
-          _ <- B.runInsert . B.insert (FEC._openFEC_DB_candidate_x_committee FEC.openFEC_DB) $ B.insertExpressions $ toInsert
+          let toExpr :: FEC.CandidateT f -> FEC.CommitteeT f -> FEC.Candidate_x_CommitteeT f
+              toExpr ca co = FEC.Candidate_x_Committee (B.pk ca) (B.pk co)
+              toInsert = fmap (flip toExpr committee) candidates
+          liftIO $ putStr $ (T.unpack $ maybe (FEC._committee_id committee) id $ FEC._committee_name committee) ++ " (" ++ (show $ length candidates) ++ ")..."
+          _ <- B.runInsert . B.insert (FEC._openFEC_DB_candidate_x_committee FEC.openFEC_DB) $ B.insertValues $ toInsert
           return ()
         totalXRows <- B.runSelectReturningOne $ B.select countCxCRows
         liftIO $ putStrLn $ "Loaded " ++ maybe "0 (Error counting)" show totalXRows ++ " rows."
@@ -141,13 +129,14 @@ main = do
   manager <- newManager managerSettings
   dbConn <- SL.open openFEC_SqliteFile
   let clientEnv = mkClientEnv manager FEC.baseUrl
+      runServant :: ClientM a -> IO (Either ServantError a)
       runServant x = runClientM x clientEnv
   putStrLn $ "Doing DB migrations, if necessary."
-  B.runBeamSqliteDebug putStrLn $ autoMigrate migrationBackend openFEC_DbMigratable
+  B.runBeamSqliteDebug putStrLn dbConn $ autoMigrate migrationBackend openFEC_DbMigratable
   loadCandidates runServant dbConn (\x -> FEC.getCandidates [] [] Nothing Nothing Nothing x) [2018]
-  loadCommittees runServant dbConn (FEC.getCommittees Nothing)
+  loadCommittees runServant dbConn (FEC.getCommittees Nothing) [2018]
 
-                                      {-
+{-
   result <- runClientM query clientEnv
   case result of
     Left err -> putStrLn $ "Query returned an error: " ++ show err

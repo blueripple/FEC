@@ -13,48 +13,51 @@
 module Main where
 
 
-import qualified OpenFEC.API                      as FEC
-import qualified OpenFEC.Types                    as FEC
+import qualified OpenFEC.API                              as FEC
+import qualified OpenFEC.Types                            as FEC
 
-import           ExploreFEC.Data.Spending         (getHouseRaceSpending,
-                                                   getPresidentialRaceSpending,
-                                                   getSenateRaceSpending)
+import           ExploreFEC.Data.Spending                 (CandidateSpending (..),
+                                                           describeSpending,
+                                                           getCandidateSpending')
 
-import           OpenFEC.Beam.Sqlite.CustomFields ()
-import qualified OpenFEC.Beam.Types               as FEC
+import           OpenFEC.Beam.Sqlite.CustomFields         ()
+import qualified OpenFEC.Beam.Types                       as FEC
 
 
-import qualified Database.Beam                    as B
-import qualified Database.Beam.Sqlite             as B
+import qualified Database.Beam                            as B
+import qualified Database.Beam.Backend.SQL.BeamExtensions as BE
+import qualified Database.Beam.Sqlite                     as B
 
-import           Database.Beam.Migrate            (CheckedDatabaseSettings,
-                                                   defaultMigratableDbSettings)
-import           Database.Beam.Migrate.Simple     (autoMigrate)
-import           Database.Beam.Sqlite.Migrate     (migrationBackend)
-import qualified Database.SQLite.Simple           as SL
+import           Database.Beam.Migrate                    (CheckedDatabaseSettings,
+                                                           defaultMigratableDbSettings)
+import           Database.Beam.Migrate.Simple             (autoMigrate)
+import           Database.Beam.Sqlite.Migrate             (migrationBackend)
+import qualified Database.SQLite.Simple                   as SL
 
-import           Network.HTTP.Client.TLS          (tlsManagerSettings)
-import           Servant.Client                   (ClientM, ServantError,
-                                                   mkClientEnv, runClientM)
+import           Network.HTTP.Client.TLS                  (tlsManagerSettings)
+import           Servant.Client                           (ClientM,
+                                                           ServantError,
+                                                           mkClientEnv,
+                                                           runClientM)
 
-import           Control.Lens                     ((^.))
-import           Control.Monad                    (forM_, mapM_, sequence)
-import           Control.Monad.IO.Class           (liftIO)
-import           Data.Aeson                       (encodeFile)
-import qualified Data.Foldable                    as F
-import qualified Data.List                        as L
-import           Data.List.Split                  (chunksOf)
-import           Data.List.Unique                 (repeated)
-import qualified Data.Map                         as M
-import           Data.Maybe                       (isNothing)
-import qualified Data.Text                        as T
-import qualified Data.Vector                      as V
-import           Network.HTTP.Client              (Manager,
-                                                   defaultManagerSettings,
-                                                   managerModifyRequest,
-                                                   newManager)
+import           Control.Lens                             (Lens', (.~), (^.))
+import           Control.Monad                            (forM_, mapM_,
+                                                           sequence)
+import           Control.Monad.IO.Class                   (liftIO)
+import           Data.Aeson                               (encodeFile)
+import qualified Data.Foldable                            as F
+import qualified Data.List                                as L
+import           Data.List.Split                          (chunksOf)
+import           Data.List.Unique                         (repeated)
+import qualified Data.Map                                 as M
+import           Data.Maybe                               (isNothing)
+import qualified Data.Text                                as T
+import qualified Data.Vector                              as V
+import           Network.HTTP.Client                      (Manager, defaultManagerSettings,
+                                                           managerModifyRequest,
+                                                           newManager)
 
-import qualified Text.PrettyPrint.Tabulate        as PP
+import qualified Text.PrettyPrint.Tabulate                as PP
 
 
 -- create the migration
@@ -111,30 +114,50 @@ loadCommittees runServant dbConn getCommsWith electionYears = do
         totalXRows <- B.runSelectReturningOne $ B.select countCxCRows
         liftIO $ putStrLn $ "Loaded " ++ maybe "0 (Error counting)" show totalXRows ++ " rows."
 
-{-
+
+maxDisbursementId = FEC._disbursement_id <$> (B.limit_ 1 $ B.orderBy_ (B.desc_ . FEC._disbursement_id) $ B.all_ (FEC._openFEC_DB_disbursement FEC.openFEC_DB))
+maxIndExpenditureId = FEC._indExpenditure_id <$> (B.limit_ 1 $ B.orderBy_ (B.desc_ . FEC._indExpenditure_id) $ B.all_ (FEC._openFEC_DB_indExpenditure FEC.openFEC_DB))
+maxPartyExpenditureId = FEC._partyExpenditure_id <$> (B.limit_ 1 $ B.orderBy_ (B.desc_ . FEC._partyExpenditure_id) $ B.all_ (FEC._openFEC_DB_partyExpenditure FEC.openFEC_DB))
+
+-- reverse makes this order-preserving.  Do we care?
+addIds :: Lens' a Int -> Int -> [a] -> [a]
+addIds l firstId as = reverse . fst  $ F.foldl' (\(newAs, newId) oldA -> (((l .~ newId) oldA) : newAs, newId + 1)) ([],firstId) as
+
+
 loadSpendingForCandidate ::
   (forall a. ClientM a -> IO (Either ServantError a)) ->
   SL.Connection ->
-  (FEC.CandidateID -> FEC.ElectionYear -> ClientM (V.Vector FEC.Disbursement))
-  -> FEC.Candidate
-  -> FEC.ElectionYear
-  -> IO ()
-loadSpendingForCandidate runServant dbConn getDisbursements candidate electionYear = do
+  FEC.Candidate ->
+  FEC.ElectionYear ->
+  IO ()
+loadSpendingForCandidate runServant dbConn candidate electionYear = do
   let getAllCxC = B.all_ $ FEC._openFEC_DB_candidate_x_committee FEC.openFEC_DB
-      committeeIDsForCandidate x = B.filter_ (FEC._candidate_x_committee_candidate_id B.==. (B.val_ $ FEC._candidate_id x)) getAllCxC
-  cxcs <- B.runBeamSqlite dbConn $ B.runSelectReturningList $ B.select $ committeeIDsForCandidateID candidate
-  let committeeIDs = FEC._candidate_x_committee_committee_id <$> cxcs
+      committeeIDsForCandidateID x = B.filter_ (\cxc -> FEC._candidate_x_committee_candidate_id cxc B.==. (B.val_ $ FEC.CandidateKey (FEC._candidate_id x))) getAllCxC
+  cxcs :: [FEC.Candidate_x_Committee] <- B.runBeamSqlite dbConn $ B.runSelectReturningList $ B.select $ committeeIDsForCandidateID candidate
+  let committeeIDs = (\(FEC.CommitteeKey x) -> x) . FEC._candidate_x_committee_committee_id <$> cxcs
   putStrLn $ "Querying OpenFEC for spending by/for " ++ T.unpack (FEC._candidate_name candidate)
-  candidateSpending <- getCandidateSpending' candidate committeeIDs electionYear
-  putStrLn $ T.unpack $ describeSpending candidateSpending
--}
-
+  candidateSpendingE <- runServant $ getCandidateSpending' candidate committeeIDs electionYear
+  case candidateSpendingE of
+    Left err -> putStrLn $ "Servant Query returned an error: " ++ show err
+    Right candidateSpending -> do
+      putStrLn $ T.unpack $ describeSpending candidateSpending
+      B.runBeamSqlite dbConn $ do
+        maxDisbursementIdM <- B.runSelectReturningOne $ B.select maxDisbursementId
+        maxIndExpenditureIdM <- B.runSelectReturningOne $ B.select maxIndExpenditureId
+        maxPartyExpenditureIdM <- B.runSelectReturningOne $ B.select maxPartyExpenditureId
+        let dNext = maybe 0 (+1) maxDisbursementIdM
+            iNext = maybe 0 (+1) maxIndExpenditureIdM
+            pNext = maybe 0 (+1) maxPartyExpenditureIdM
+        mapM_ (B.runInsert . B.insert (FEC._openFEC_DB_disbursement FEC.openFEC_DB) . B.insertValues) $ chunksOf 100 $ addIds (FEC.disbursement_id) dNext $ V.toList $ _disbursements candidateSpending
+        mapM_ (B.runInsert . B.insert (FEC._openFEC_DB_indExpenditure FEC.openFEC_DB) . B.insertValues) $ chunksOf 100 $ addIds (FEC.indExpenditure_id) iNext $ V.toList $ _independentExpenditures candidateSpending
+        mapM_ (B.runInsert . B.insert (FEC._openFEC_DB_partyExpenditure FEC.openFEC_DB) . B.insertValues) $ chunksOf 100 $ addIds (FEC.partyExpenditure_id) pNext $ V.toList $ _partyExpenditures candidateSpending
+        B.runDelete $ B.delete (FEC._openFEC_DB_candidate_to_load FEC.openFEC_DB) (\cidOnly -> FEC._candidate_id_only cidOnly B.==. (B.val_ $ FEC.CandidateKey . FEC._candidate_id $ candidate))
 
 openFEC_SqliteFile = "../DBs/FEC-test.db"
 
 main :: IO ()
 main = do
-  let electionYears = [2018]
+  let electionYear = 2018
       doUpdateCandidates = False
       doUpdateCommittees = False
       doUpdateSpendingWorkTable = True
@@ -149,13 +172,13 @@ main = do
   putStrLn $ "Doing DB migrations, if necessary."
   B.runBeamSqliteDebug putStrLn dbConn $ autoMigrate migrationBackend openFEC_DbMigratable
   putStrLn $ "updating initial candidate and committee tables, if necessary"
-  doIf doUpdateCandidates $ loadCandidates runServant dbConn (\x -> FEC.getCandidates [] [] Nothing Nothing Nothing x) [2018]
-  doIf doUpdateCommittees $ loadCommittees runServant dbConn (FEC.getCommittees Nothing) [2018]
+  doIf doUpdateCandidates $ loadCandidates runServant dbConn (\x -> FEC.getCandidates [] [] Nothing Nothing Nothing x) [electionYear]
+  doIf doUpdateCommittees $ loadCommittees runServant dbConn (FEC.getCommittees Nothing) [electionYear]
   putStrLn $ "building tracking table for remaining transaction loading work, if necessary"
   doIf doUpdateSpendingWorkTable $ runBeam dbConn $ do
     candidates <- B.runSelectReturningList $ B.select $ B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
     let candidateIds = fmap (FEC.CandidateIdOnly . FEC.CandidateKey . FEC._candidate_id) candidates
-    mapM_ (B.runInsert . B.insert (FEC._openFEC_DB_candidate_to_load FEC.openFEC_DB) . B.insertValues) $ chunksOf 200 candidateIds
+    mapM_ (B.runInsert . B.insert (FEC._openFEC_DB_candidate_to_load FEC.openFEC_DB) . B.insertValues) $ chunksOf 900 candidateIds
   candidatesToLoad <- runBeam dbConn $ B.runSelectReturningList $ B.select $ do
     let getAllCandidates = B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
         getAllCandidatesToLoad = B.all_ (FEC._openFEC_DB_candidate_to_load FEC.openFEC_DB)
@@ -163,9 +186,8 @@ main = do
     idToLoad <- getAllCandidatesToLoad
     B.guard_ (FEC._candidate_id_only idToLoad `B.references_` candidate)
     return candidate
-
   putStrLn $ "Found " ++ (show $ length candidatesToLoad) ++ " remaining candidates to load data for."
-
+  mapM_ (\x -> loadSpendingForCandidate runServant dbConn x electionYear) candidatesToLoad
 
 
 {-

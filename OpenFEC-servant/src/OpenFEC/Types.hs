@@ -28,7 +28,7 @@ import           Data.Foldable             (foldl')
 import qualified Data.Foldable             as F
 import           Data.Scientific           (FPFormat (Fixed), Scientific,
                                             formatScientific)
-import           Data.Text                 (Text, pack)
+import           Data.Text                 (Text, pack, unpack)
 import           Data.Time.Calendar        (Day)
 import           Data.Time.Clock           (UTCTime)
 import           Data.Time.Format          (defaultTimeLocale, formatTime)
@@ -36,7 +36,9 @@ import           Data.Time.LocalTime       (LocalTime, utc, utcToLocalTime)
 import           Data.Vector               (Vector, toList)
 import           GHC.Generics              (Generic)
 import qualified Text.PrettyPrint.Tabulate as PP
+import           Text.Read                 (readMaybe)
 import           Web.HttpApiData           (ToHttpApiData (..))
+
 
 import           OpenFEC.JsonUtils
 import qualified OpenFEC.Pagination        as FEC
@@ -193,6 +195,10 @@ instance A.ToJSON Disbursement where
   toJSON = A.genericToJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
 
 --makeLenses ''Disbursement
+sub_idFromText :: Either ByteString Text -> Either ByteString Int
+sub_idFromText t =
+  let f = either Left (maybe (Left "Error converting sub_id Text to Int") Right)
+  in f $ readMaybe . unpack <$> t
 
 disbursementFromResultJSON :: A.Value -> Either ByteString Disbursement
 disbursementFromResultJSON val = Disbursement
@@ -202,7 +208,7 @@ disbursementFromResultJSON val = Disbursement
   <*> val |#| "recipient_name"
   <*> val |#| "committee_id"
   <*> val |#| "line_number_label"
-  <*> val |#| "sub_id"
+  <*> pure 0 -- sub_idFromText (val |#| "sub_id")
 
 instance PP.CellValueFormatter SpendingIntention
 
@@ -245,7 +251,7 @@ indExpenditureFromResultJSON val = IndExpenditure
   <*> val |#| "expenditure_description"
   <*> tryKeys ["candidate","candidate_id"] val
   <*> val |#| "committee_id"
-  <*> val |#| "sub_id"
+  <*> pure 0 -- sub_idFromText (val |#| "sub_id")
 
 
 instance A.FromJSON PartyExpenditure where
@@ -263,4 +269,4 @@ partyExpenditureFromResultJSON val = PartyExpenditure
   <*> val |#| "expenditure_purpose_full"
   <*> tryKeys ["committee","committee_id"] val -- val |#| "committee_id"
   <*> tryKeys ["committee","name"] val -- val |#| "committee_name"
-  <*> val |#| "sub_id"
+  <*> pure 0 --sub_idFromText (val |#| "sub_id")

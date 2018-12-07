@@ -160,7 +160,7 @@ data DisbursementT f = Disbursement
   , _disbursement_recipient_name    :: C f (Maybe Text)
   , _disbursement_candidate_id      :: B.PrimaryKey CandidateT f
   , _disbursement_committee_id      :: B.PrimaryKey CommitteeT f
-  , _disbursement_line_number_label :: C f Text
+  , _disbursement_line_number_label :: C f (Maybe Text)
   , _disbursement_sub_id            :: C f Int
   , _disbursement_id                :: C f Int
   } deriving (Generic)

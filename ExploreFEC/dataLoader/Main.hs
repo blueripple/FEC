@@ -52,7 +52,11 @@ import           Data.List.Split                          (chunksOf, splitOn)
 import           Data.List.Unique                         (repeated)
 import qualified Data.Map                                 as M
 import           Data.Maybe                               (isNothing)
+import qualified Data.Sequence                            as Seq
 import qualified Data.Text                                as T
+import           Data.Time.Format                         (defaultTimeLocale,
+                                                           parseTimeM)
+import           Data.Time.LocalTime                      (LocalTime)
 import qualified Data.Vector                              as V
 import           Data.Vinyl                               (ElField (..))
 import           Data.Vinyl.Curry                         (runcurryX)
@@ -119,7 +123,7 @@ loadCommittees runServant dbConn getCommsWith electionYears = do
           let toExpr :: FEC.CandidateT f -> FEC.CommitteeT f -> FEC.Candidate_x_CommitteeT f
               toExpr ca co = FEC.Candidate_x_Committee (B.pk ca) (B.pk co)
               toInsert = fmap (flip toExpr committee) candidates
-          liftIO $ putStr $ (T.unpack $ maybe (FEC._committee_id committee) id $ FEC._committee_name committee) ++ " (" ++ (show $ length candidates) ++ ")..."
+--          liftIO $ putStr $ (T.unpack $ maybe (FEC._committee_id committee) id $ FEC._committee_name committee) ++ " (" ++ (show $ length candidates) ++ ")..."
           _ <- B.runInsert . B.insert (FEC._openFEC_DB_candidate_x_committee FEC.openFEC_DB) $ B.insertValues $ toInsert
           return ()
         totalXRows <- B.runSelectReturningOne $ B.select countCxCRows
@@ -179,10 +183,40 @@ candidateNameMatchMap cs =
         in M.insert k (FS.add fuzzy ln, M.insert ln (n, getId t) idByLastName) m
   in F.foldl' f M.empty cs
 
-toUpperLastName = T.toUpper . snd . T.breakOnEnd " "
+toUpperLastName fullName =
+  let notNameL = ["JR.","II","III","IV"]
+      (x, end) = T.breakOnEnd " " fullName
+      end' = T.toUpper end
+      in if T.strip end' `L.elem` notNameL then T.toUpper ( snd  $ T.breakOnEnd " " $ T.strip x) else end'
 
 houseForecastFile = "/Users/adam/DataScience/DBs/house_district_forecast.csv"
 tableTypes "HouseForecast538" "/Users/adam/DataScience/DBs/house_district_forecast.csv"
+
+starting538NameMap = M.fromList
+  [
+    ("Phillip Aronoff",Just ("PHILLIP ARNOLD ARONOFF","H8TX29094"))
+  , ("Rick Tyler", Just ("TYLER, RICK", "H6TN04218"))
+--  , ("Stephen J. Young", Just ("YOUNG, STEPHEN ROBERT NEALE","H8MI12112")) -- not sure about this.  Different names and districts.  Both in MI, tho
+  ]
+
+decodeFrame :: Int
+  -> Record '[Forecastdate, State, District, Special, Candidate, Party, Incumbent, Model, WinProbability, Voteshare, P10Voteshare, P90Voteshare]
+  -> Maybe FEC.Forecast538
+decodeFrame id f =
+  let (Field dateT) = f ^. rlens @Forecastdate
+      dateM = parseTimeM True defaultTimeLocale "%Y-%-m-%-d" (T.unpack dateT) :: Maybe LocalTime
+      (Field state) = f ^. rlens @State
+      (Field district) = f ^. rlens @District
+      (Field special) = f ^. rlens @Special
+      (Field name) = f ^. rlens @Candidate
+      (Field party) = f ^. rlens @Party
+      (Field incumbent) = f ^. rlens @Incumbent
+      (Field model) = f ^. rlens @Model
+      (Field winP) = f ^. rlens @WinProbability
+      (Field voteshare) = f ^. rlens @Voteshare
+      (Field p10_vs) = f ^. rlens @P10Voteshare
+      (Field p90_vs) = f ^. rlens @P90Voteshare
+  in FEC.Forecast538 <$> dateM <*> pure (FEC.CandidateKey "") <*> pure name <*> pure incumbent <*> pure model <*> pure winP <*> pure voteshare <*> pure p10_vs <*> pure p90_vs <*> pure id
 
 load538PollingData :: SL.Connection -> FilePath -> IO ()
 load538PollingData dbConn inputFile = do
@@ -191,27 +225,39 @@ load538PollingData dbConn inputFile = do
     candidate <- B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
     pure (FEC._candidate_name candidate, FEC._candidate_state candidate, FEC._candidate_district candidate, FEC._candidate_id candidate)
   let matchMap = candidateNameMatchMap nameStateDistrictId
-      getFECId :: () -> Record '[Forecastdate, State, District, Special, Candidate] -> S.State (M.Map Text (Maybe (FEC.Name, FEC.CandidateID))) ()
-      getFECId _ x = do
-        matched <- S.get
-        let (Field name538) = x ^. rlens @Candidate
-            fecNameAlreadyM = M.lookup name538 matched
-        case fecNameAlreadyM of
-          Just fecNameM -> return ()
-          Nothing -> do
-            let (Field state) = x ^. rlens @State
-                (Field district) = x ^. rlens @District
-                fsAndMapM = M.lookup (state, district) matchMap
-            case fsAndMapM of
-              Nothing -> return ()
-              Just (fuzzy, m) -> S.put $ M.insert name538 (FS.getOne fuzzy (toUpperLastName name538) >>= flip M.lookup m) matched
-      getFECIdFoldM = FL.FoldM getFECId (return ()) return
+      getFECId :: Seq.Seq FEC.Forecast538
+               -> Record '[Forecastdate, State, District, Special, Candidate, Party, Incumbent, Model, WinProbability, Voteshare, P10Voteshare, P90Voteshare]
+               -> S.State (Int, M.Map Text (Maybe (FEC.Name, FEC.CandidateID))) (Seq.Seq FEC.Forecast538)
+      getFECId fs x = do
+        (nextId, matched) <- S.get
+        case decodeFrame nextId x of
+          Nothing -> return fs -- frame not decoded properly
+          Just fcast -> do
+            let name538 = (FEC._forecast538_candidate_name fcast)
+                fecNameAlreadyM = M.lookup name538 matched
+            case fecNameAlreadyM of
+              Just fecNameM -> case fecNameM of
+                Nothing -> S.put (nextId + 1, matched) >> return (fs Seq.|> fcast) -- already tried to match but failed.  Put in the row without FEC Id
+                Just (_, fecId) ->  S.put (nextId + 1, matched) >> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey fecId}) -- insert id
+              Nothing -> do -- need to match this name
+                let (Field state) = x ^. rlens @State
+                    (Field district) = x ^. rlens @District
+                    fsAndMapM = M.lookup (state, district) matchMap
+                case fsAndMapM of
+                  Nothing -> S.put (nextId + 1, matched) >> return (fs Seq.|> fcast) -- Failed to match state/district. Shouldn't happen! Put in the row without FEC Id
+                  Just (fuzzy, m) -> do
+                    let fecMatchM = FS.getOne fuzzy (toUpperLastName name538) >>= flip M.lookup m
+                    S.put $ (nextId + 1, M.insert name538 fecMatchM matched) -- up the id and add this match
+                    case fecMatchM of
+                      Nothing -> S.put (nextId + 1, matched) >> return (fs Seq.|> fcast) -- Fuzzy match failed. Put in the row without FEC Id.
+                      Just (_, fecId) -> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey fecId}) -- insert id
+      getFECIdFoldM = FL.FoldM getFECId (return Seq.empty) return
   -- trying to do in memory first.  May need to stream it...
   loadedRows <- inCoreAoS (readTable houseForecastFile)
   -- first pass, get unique names and match them
-  let (_,names538Map) = S.runState (FL.foldM getFECIdFoldM loadedRows) M.empty
-  print names538Map
-  putStrLn $ show . L.length . M.toList $ names538Map
+  let (_,(_,names538Map)) = S.runState (FL.foldM getFECIdFoldM loadedRows) (0,starting538NameMap)
+  print $ M.filter isNothing names538Map
+
 
 {-
   let matchName
@@ -227,12 +273,12 @@ openFEC_SqliteFile = "../DBs/FEC.db"
 main :: IO ()
 main = do
   let electionYear = 2018
-      doDbMigrations = True
-      doUpdateCandidates = True
-      doUpdateCommittees = True
-      doUpdateSpendingWorkTable = True
-      doLoadTransactions = True
-      doLoad538Data = False
+      doDbMigrations = False
+      doUpdateCandidates = False
+      doUpdateCommittees = False
+      doUpdateSpendingWorkTable = False
+      doLoadTransactions = False
+      doLoad538Data = True
       doIf doIt action = if doIt then action else return ()
       managerSettings = tlsManagerSettings { managerModifyRequest = \req -> FEC.delayQueries FEC.fecQueryLimit >> {- putStrLn req >> -}  return req }
   manager <- newManager managerSettings
@@ -246,7 +292,7 @@ main = do
     B.runBeamSqliteDebug putStrLn dbConn $ autoMigrate migrationBackend openFEC_DbMigratable
   doIf doUpdateCandidates $ do
     putStrLn $ "updating candidate table"
-    loadCandidates runServant dbConn (\x -> FEC.getCandidates [] [] Nothing Nothing Nothing x) [electionYear]
+    loadCandidates runServant dbConn (\x -> FEC.getCandidates [] [] Nothing Nothing (Just electionYear) x) [electionYear]
   doIf doUpdateCommittees $ do
     putStrLn $ "updating committee table"
     loadCommittees runServant dbConn (FEC.getCommittees Nothing) [electionYear]

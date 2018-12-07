@@ -66,7 +66,7 @@ fecMaxPerPage :: Int
 fecMaxPerPage = 100
 
 data QueryLimit = QueryLimit { maxQueries :: Int, perTime :: C.DiffTime }
-fecQueryLimit = QueryLimit 120 (C.secondsToDiffTime 60)
+fecQueryLimit = QueryLimit 120 (C.secondsToDiffTime 35)
 {-
 rateLimited  :: QueryLimit -> (a -> IO b) -> IO (a -> IO b)
 rateLimited (QueryLimit n per) action =
@@ -89,7 +89,7 @@ getCandidatesPage offices parties stateM districtM electionYearM cycles page =
 getCandidates :: [FEC.Office] -> [FEC.Party] ->  Maybe FEC.State -> Maybe FEC.District -> Maybe FEC.ElectionYear ->  [FEC.ElectionYear] -> ClientM (Vector FEC.Candidate)
 getCandidates offices parties stateM districtM electionYearM cycles =
     let getOnePage = getCandidatesPage offices parties stateM districtM electionYearM cycles
-    in FEC.getAllPages Nothing FEC.NoneIfAnyFailed getOnePage FEC.candidateFromResultJSON
+    in FEC.getAllPages Nothing FEC.SkipFailed getOnePage FEC.candidateFromResultJSON
 
 getHouseCandidates :: FEC.State -> FEC.District -> Maybe FEC.ElectionYear -> [FEC.ElectionYear]  -> ClientM (Vector FEC.Candidate)
 getHouseCandidates state district electionYearM cycles = getCandidates [FEC.House] [] (Just state) (Just district) electionYearM cycles

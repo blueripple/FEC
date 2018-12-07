@@ -28,7 +28,7 @@ import qualified Data.Map               as M
 import           Data.Maybe             (fromMaybe)
 import           Data.Monoid            ((<>))
 import           Data.Scientific        (Scientific)
-import           Data.Text              (Text)
+import           Data.Text              (Text, unpack)
 import qualified Data.Time.Clock        as C
 import           Data.Time.LocalTime    (LocalTime)
 import           Data.Time.Units        (Microsecond, TimeUnit,
@@ -84,7 +84,7 @@ delayQueries (QueryLimit n per) =
 
 getCandidatesPage :: [FEC.Office] -> [FEC.Party] -> Maybe FEC.State -> Maybe FEC.District -> Maybe FEC.ElectionYear -> [FEC.ElectionYear] -> FEC.PageNumber -> ClientM FEC.Page
 getCandidatesPage offices parties stateM districtM electionYearM cycles page =
-  (_candidates fecClients) (Just fecApiKey) ["C"] (FEC.officeToText <$> offices) (FEC.partyToText <$> parties) stateM districtM electionYearM cycles (Just fecMaxPerPage) (Just page)
+  (_candidates fecClients) (Just fecApiKey) [] (FEC.officeToText <$> offices) (FEC.partyToText <$> parties) stateM districtM electionYearM cycles (Just fecMaxPerPage) (Just page)
 
 getCandidates :: [FEC.Office] -> [FEC.Party] ->  Maybe FEC.State -> Maybe FEC.District -> Maybe FEC.ElectionYear ->  [FEC.ElectionYear] -> ClientM (Vector FEC.Candidate)
 getCandidates offices parties stateM districtM electionYearM cycles =
@@ -141,13 +141,16 @@ getDisbursementsIPage cid electionYear lastIndexM lastDisbursementDateM = do
     Left errBS -> throw $ err417 { errBody = "Decoding Error (Aeson.Value -> FEC.IndexedPage LocalTime) in getDisbursementsIPage. " <> errBS }
     Right ip -> return ip
 
-getDisbursements :: FEC.CommitteeID -> FEC.ElectionYear -> ClientM (Vector FEC.Disbursement)
-getDisbursements cid electionYear =
+getDisbursements :: FEC.CommitteeID -> FEC.CandidateID -> FEC.ElectionYear -> ClientM (Vector FEC.Disbursement)
+getDisbursements coid caid electionYear = do
   let getOnePage x = case x of
-        Nothing -> getDisbursementsIPage cid electionYear Nothing Nothing
-        Just (FEC.LastIndex li ldd) -> getDisbursementsIPage cid electionYear (Just li) (Just ldd)
-  in FEC.getAllIndexedPages Nothing FEC.NoneIfAnyFailed getOnePage FEC.disbursementFromResultJSON
-
+        Nothing -> getDisbursementsIPage coid electionYear Nothing Nothing
+        Just (FEC.LastIndex li ldd) -> getDisbursementsIPage coid electionYear (Just li) (Just ldd)
+  raw <- FEC.getAllIndexedPages Nothing FEC.NoneIfAnyFailed getOnePage (FEC.disbursementFromResultJSON caid)
+  let nonZero x = FEC._disbursement_amount_adj x /= 0
+      adj = V.filter nonZero raw
+  liftIO $ putStrLn $ unpack coid ++ ": Dropped " ++ show ((V.length raw) - (V.length adj)) ++ " entries from disbursements since they were not for this candidate."
+  return adj
 
 getIndependentExpendituresByCandidateIPage :: FEC.CandidateID -> [FEC.ElectionYear] -> Maybe Int -> Maybe LocalTime -> ClientM (FEC.IndexedPage LocalTime)
 getIndependentExpendituresByCandidateIPage cid cycles liM leM = do
@@ -214,5 +217,5 @@ getPartyExpendituresPage cid cycles page =
 getPartyExpenditures :: FEC.CandidateID -> [FEC.ElectionYear] -> ClientM (Vector FEC.PartyExpenditure)
 getPartyExpenditures cid cycles =
   let getOnePage = getPartyExpendituresPage cid cycles
-  in FEC.getAllPages Nothing FEC.NoneIfAnyFailed getOnePage FEC.partyExpenditureFromResultJSON
+  in FEC.getAllPages Nothing FEC.SkipFailed getOnePage (FEC.partyExpenditureFromResultJSON cid)
 

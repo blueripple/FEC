@@ -26,6 +26,7 @@ import qualified Data.ByteString.Lazy      as BS
 import           Data.Data                 (Data)
 import           Data.Foldable             (foldl')
 import qualified Data.Foldable             as F
+import qualified Data.List                 as L
 import           Data.Scientific           (FPFormat (Fixed), Scientific,
                                             formatScientific)
 import           Data.Text                 (Text, pack, unpack)
@@ -33,9 +34,11 @@ import           Data.Time.Calendar        (Day)
 import           Data.Time.Clock           (UTCTime)
 import           Data.Time.Format          (defaultTimeLocale, formatTime)
 import           Data.Time.LocalTime       (LocalTime, utc, utcToLocalTime)
-import           Data.Vector               (Vector, toList)
+import           Data.Vector               (Vector)
+import qualified Data.Vector               as V
 import           GHC.Generics              (Generic)
 import qualified Text.PrettyPrint.Tabulate as PP
+import           Text.Printf               (printf)
 import           Text.Read                 (readMaybe)
 import           Web.HttpApiData           (ToHttpApiData (..))
 
@@ -85,13 +88,33 @@ partyToText Libertarian     = "LIB"
 partyToText Other           = "OTH"
 partyToText Unknown         = "UNK"
 
+parseParty :: Text -> Maybe Party
+parseParty t = case t of
+  "DEM" -> Just Democrat
+  "REP" -> Just Republican
+  "IND" -> Just Independent
+  "WFP" -> Just WorkingFamilies
+  "CON" -> Just Conservative
+  "GRE" -> Just Green
+  "LIB" -> Just Libertarian
+  "OTH" -> Just Other
+  "UNK" -> Just Unknown
+  _     -> Just Other -- Nothing
+
+resultToMaybe (A.Error _)   = Nothing
+resultToMaybe (A.Success a) = Just a
+
+_Party :: Prism' A.Value Party
+_Party = prism' (A.String . partyToText) (join . resultToMaybe . fmap parseParty . A.fromJSON)
+
 instance A.ToJSON Party where
   toJSON = A.String . partyToText
 
 -- this one is used in Parsing from FEC data.  Maybe we can build a custom Prism? "Prism' Text Party" ?
 instance A.FromJSON Party where
   parseJSON o = A.withText "Party" f o where
-    f t = case t of
+    f = maybe (A.typeMismatch "Party" o) return . parseParty
+{-    f t = case t of
       "DEM" -> return Democrat
       "REP" -> return Republican
       "IND" -> return Independent
@@ -102,7 +125,7 @@ instance A.FromJSON Party where
       "OTH" -> return Other
       "UNK" -> return Unknown
       _     -> return Other --A.typeMismatch "Party" o
-
+-}
 
 instance A.FromJSON Candidate where
   parseJSON = A.genericParseJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
@@ -145,7 +168,7 @@ committeeWithCandidatesFromResultJSON val = (,)
   <*> val |#| "candidate_ids"
 
 amountToText :: Amount -> Text
-amountToText = pack . formatScientific Fixed (Just 2)
+amountToText = pack . printf "%.2f"
 
 dayToText :: Day -> Text
 dayToText = pack . formatTime defaultTimeLocale "%F"
@@ -200,15 +223,32 @@ sub_idFromText t =
   let f = either Left (maybe (Left "Error converting sub_id Text to Int") Right)
   in f $ readMaybe . unpack <$> t
 
-disbursementFromResultJSON :: A.Value -> Either ByteString Disbursement
-disbursementFromResultJSON val = Disbursement
-  <$> tryTwoKeys "disbursement_date" "load_date" (utcToLocalTime utc) val -- val |#| "disbursement_date"
-  <*> val |#| "disbursement_amount"
-  <*> val |#| "disbursement_purpose_category"
-  <*> val |#| "recipient_name"
-  <*> val |#| "committee_id"
-  <*> val |#| "line_number_label"
-  <*> pure 0 -- sub_idFromText (val |#| "sub_id")
+maybeToEitherF :: c -> (a -> Maybe b) -> (a -> Either c b)
+maybeToEitherF leftVal f a = case f a of
+  Nothing -> Left leftVal
+  Just x  -> Right x
+
+disbursementFromResultJSON :: CandidateID -> A.Value -> Either ByteString Disbursement
+disbursementFromResultJSON cid val =
+  let candidatesValVecE :: Either ByteString (Vector A.Value) = tryP "committee.candidate_ids" (key "committee" . key "candidate_ids" . _Array) val
+      candidatesVecE :: Either ByteString (Vector Text) = candidatesValVecE >>= maybeToEitherF "Failed to parse json in array to candidate id" (sequence . fmap (\x -> x ^? _String))
+      num_candidatesE :: Either ByteString Int = L.length <$> candidatesVecE
+      amountE = val |#| "disbursement_amount"
+      adj_amountE = case candidatesVecE of
+        Left err -> Left err
+        Right candsV -> if cid `V.elem` candsV then (fmap (/(fromIntegral $ V.length candsV)) amountE) else Right 0
+  in Disbursement
+     <$> tryTwoKeys "disbursement_date" "load_date" (utcToLocalTime utc) val -- val |#| "disbursement_date"
+     <*> amountE
+     <*> adj_amountE
+     <*> num_candidatesE
+     <*> val |#| "disbursement_purpose_category"
+     <*> val |#| "recipient_name"
+     <*> pure (CandidateKey cid)
+     <*> val |#| "committee_id"
+     <*> val |#| "line_number_label"
+     <*> sub_idFromText (val |#| "sub_id")
+     <*> pure 0
 
 instance PP.CellValueFormatter SpendingIntention
 
@@ -251,7 +291,8 @@ indExpenditureFromResultJSON val = IndExpenditure
   <*> val |#| "expenditure_description"
   <*> tryKeys ["candidate","candidate_id"] val
   <*> val |#| "committee_id"
-  <*> pure 0 -- sub_idFromText (val |#| "sub_id")
+  <*> sub_idFromText (val |#| "sub_id")
+  <*> pure 0
 
 
 instance A.FromJSON PartyExpenditure where
@@ -262,11 +303,13 @@ instance A.ToJSON PartyExpenditure where
 
 --makeLenses ''PartyExpenditure
 
-partyExpenditureFromResultJSON :: A.Value -> Either ByteString PartyExpenditure
-partyExpenditureFromResultJSON val = PartyExpenditure
+partyExpenditureFromResultJSON :: CandidateID -> A.Value -> Either ByteString PartyExpenditure
+partyExpenditureFromResultJSON cid val = PartyExpenditure
   <$> fmap (utcToLocalTime utc) (val |#| "expenditure_date")
   <*> val |#| "expenditure_amount"
   <*> val |#| "expenditure_purpose_full"
+  <*> pure (CandidateKey cid)
   <*> tryKeys ["committee","committee_id"] val -- val |#| "committee_id"
   <*> tryKeys ["committee","name"] val -- val |#| "committee_name"
-  <*> pure 0 --sub_idFromText (val |#| "sub_id")
+  <*> sub_idFromText (val |#| "sub_id")
+  <*> pure 0

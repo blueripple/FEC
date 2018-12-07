@@ -59,12 +59,12 @@ getPresidentialRaceSpending electionYear = do
 
 getCandidateSpending' :: FEC.Candidate -> [FEC.CommitteeID] -> FEC.ElectionYear -> ClientM CandidateSpending
 getCandidateSpending' cand committeeIDs electionYear = do
-  let candidateID = FEC._candidate_id cand
-      getDisbursements = flip FEC.getDisbursements electionYear
+  let candidateId = FEC._candidate_id cand
+      getDisbursements x = FEC.getDisbursements x candidateId electionYear
 --  liftIO $ putStrLn $ "committees: " ++ show (FEC._committee_id <$> committees)
   disbursements <- fmap V.concat . sequence $ (getDisbursements <$> committeeIDs)
-  indExpenditures <- FEC.getIndependentExpendituresByCandidate candidateID [electionYear]
-  partyExpenditures <- FEC.getPartyExpenditures candidateID [electionYear]
+  indExpenditures <- FEC.getIndependentExpendituresByCandidate candidateId [electionYear]
+  partyExpenditures <- FEC.getPartyExpenditures candidateId [electionYear]
   return $ CandidateSpending cand disbursements indExpenditures partyExpenditures
 
 getCandidateSpending :: FEC.Candidate -> FEC.ElectionYear -> ClientM CandidateSpending
@@ -78,7 +78,7 @@ describeSpending (CandidateSpending c d i p) =
   let f = T.pack . show
       g = FEC.amountToText
       sum l x = getSum $ L.foldMapOf (L.folded . l) Sum x
-      totalD = sum FEC.disbursement_amount d
+      totalD = sum FEC.disbursement_amount_adj d
       totalP = sum FEC.partyExpenditure_amount p
       (iS,iO) = V.partition (\x -> FEC._indExpenditure_support_oppose_indicator x == FEC.Support) i
       totalI_support = sum FEC.indExpenditure_amount_from_ytd iS

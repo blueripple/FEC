@@ -28,8 +28,12 @@ library
   exposed-modules: ExploreFEC.Data.Spending
   build-depends:       base >=4.11 && <4.12
                      , aeson
+                     , foldl
+                     , Frames
+                     , fuzzyset
                      , lens
                      , lens-aeson
+                     , mtl
                      , pptable
                      , rate-limit
                      , servant
@@ -38,6 +42,7 @@ library
                      , time-units
                      , transformers
                      , vector
+                     , vinyl
                      , OpenFEC-servant
   hs-source-dirs:      src
   default-language:    Haskell2010
@@ -51,10 +56,14 @@ executable dataLoader
                      , beam-migrate
                      , beam-sqlite
                      , containers
+                     , foldl
+                     , Frames
+                     , fuzzyset
                      , sqlite-simple
                      , http-client >= 0.5.12
                      , http-client-tls
                      , lens
+                     , mtl
                      , pptable
                      , servant-client
                      , split
@@ -62,6 +71,7 @@ executable dataLoader
                      , transformers
                      , Unique
                      , vector
+                     , vinyl
                      , ExploreFEC
                      , OpenFEC-beam
                      , OpenFEC-servant

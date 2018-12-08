@@ -39,7 +39,7 @@ import qualified Database.SQLite.Simple                   as SL
 import           Control.Applicative                      ((<*>))
 import qualified Control.Foldl                            as FL
 import           Control.Lens                             (Lens', (.~), (^.))
-import           Control.Monad                            (forM_, mapM_,
+import           Control.Monad                            (forM_, join, mapM_,
                                                            sequence)
 import           Control.Monad.IO.Class                   (liftIO)
 import qualified Control.Monad.State                      as S
@@ -171,7 +171,7 @@ loadSpendingForCandidate runServant dbConn candidate electionYear = do
 candidateNameMatchMap :: [(FEC.Name, FEC.State, FEC.District, FEC.CandidateID)] -> M.Map (FEC.State,FEC.District) (FS.FuzzySet, M.Map Text (FEC.Name, FEC.CandidateID))
 candidateNameMatchMap cs =
   let lookup x = M.findWithDefault (FS.defaultSet, M.empty) x
-      getKey (_,s,d,_) = (s,d)
+      getKey (_,s,d,_) = (s, if d == 0 then 1 else d)
       getName (n,_,_,_) = n
       getId (_,_,_,i) = i
       lastName = fst . T.breakOn ","
@@ -194,7 +194,8 @@ tableTypes "HouseForecast538" "/Users/adam/DataScience/DBs/house_district_foreca
 
 starting538NameMap = M.fromList
   [
-    ("Phillip Aronoff",Just ("PHILLIP ARNOLD ARONOFF","H8TX29094"))
+    ("Others", Just ("OTHERS","N/A"))
+  , ("Phillip Aronoff",Just ("PHILLIP ARNOLD ARONOFF","H8TX29094"))
   , ("Rick Tyler", Just ("TYLER, RICK", "H6TN04218"))
 --  , ("Lisa Blunt Rochester",Just ("BLUNT ROCHESTER, LISA", "H6DE00206"))
 --  , ("Scott Walker", Just ("WALKER, SCOTT", "H6DE00214"))
@@ -223,13 +224,37 @@ decodeFrame id f =
       (Field p90_vs) = f ^. rlens @P90Voteshare
   in FEC.Forecast538 <$> dateM <*> pure (FEC.CandidateKey "") <*> pure name <*> pure incumbent <*> pure model <*> pure winP <*> pure voteshare <*> pure p10_vs <*> pure p90_vs <*> pure id
 
+getIdAndUpdateMap :: Text
+                  -> M.Map Text (Maybe (FEC.Name, FEC.CandidateID))
+                  -> FEC.State
+                  -> FEC.District
+                  -> M.Map (FEC.State, FEC.District) (FS.FuzzySet, M.Map Text (FEC.Name, FEC.CandidateID))
+                  -> (Maybe FEC.CandidateID, M.Map Text (Maybe (FEC.Name, FEC.CandidateID)))
+getIdAndUpdateMap name idByName state district fuzzyAndMapByStateDistrict =
+  case (fmap snd . join $ M.lookup name idByName) of
+    Just cid -> (Just cid, idByName)
+    Nothing ->
+      case M.lookup (state, district) fuzzyAndMapByStateDistrict of
+        Nothing -> (Just "SD Fail", idByName)
+        Just (fuzzy, m) ->
+          case FS.getOne fuzzy (toUpperLastName name) of
+            Nothing -> (Just "fuzzyMatch fail", M.insert name Nothing idByName)
+            Just fuzzyMatch ->
+              case M.lookup fuzzyMatch m of
+                Nothing -> (Just "fuzzyMap fail", M.insert name Nothing idByName)
+                Just (fecName,cid) -> (Just cid, M.insert name (Just (fecName, cid)) idByName)
+
+{-              newMap = M.insert name matchM idByName
+          in (fmap snd matchM, newMap)
+-}
+
 load538PollingData :: SL.Connection -> FilePath -> IO ()
 load538PollingData dbConn inputFile = do
   -- first get all names and ids from candidate table
   nameStateDistrictId <- B.runBeamSqlite dbConn $ B.runSelectReturningList $ B.select $ do
     candidate <- B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
     pure (FEC._candidate_name candidate, FEC._candidate_state candidate, FEC._candidate_district candidate, FEC._candidate_id candidate)
-  let matchMap = candidateNameMatchMap nameStateDistrictId
+  let matcherMap = candidateNameMatchMap nameStateDistrictId
       getFECId :: Seq.Seq FEC.Forecast538
                -> Record '[Forecastdate, State, District, Special, Candidate, Party, Incumbent, Model, WinProbability, Voteshare, P10Voteshare, P90Voteshare]
                -> S.State (Int, M.Map Text (Maybe (FEC.Name, FEC.CandidateID))) (Seq.Seq FEC.Forecast538)
@@ -239,23 +264,12 @@ load538PollingData dbConn inputFile = do
           Nothing -> return fs -- frame not decoded properly
           Just fcast -> do
             let name538 = (FEC._forecast538_candidate_name fcast)
-                fecNameAlreadyM = M.lookup name538 matched
-            case fecNameAlreadyM of
-              Just fecNameM -> case fecNameM of -- we've seen this name before, did we match it?
-                Nothing -> S.put (nextId + 1, matched) >> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey "UNMATCH"}) -- No.  Put in the row without FEC Id
-                Just (_, fecId) ->  S.put (nextId + 1, matched) >> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey fecId}) -- Yes. insert id
-              Nothing -> do -- New name. Try to match!
-                let (Field state) = x ^. rlens @State
-                    (Field district) = x ^. rlens @District
-                    fsAndMapM = M.lookup (state, district) matchMap
-                case fsAndMapM of
-                  Nothing -> S.put (nextId + 1, matched) >> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey "ERROR!!"}) -- Failed to match state/district. Shouldn't happen! Put in the row without FEC Id
-                  Just (fuzzy, m) -> do
-                    let fecMatchM = FS.getOne fuzzy (toUpperLastName name538) >>= flip M.lookup m
-                    S.put $ (nextId + 1, M.insert name538 fecMatchM matched) -- up the id and add this match
-                    case fecMatchM of
-                      Nothing -> S.put (nextId + 1, matched) >> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey "UNMATCH"} ) -- Fuzzy match failed. Put in the row without FEC Id.
-                      Just (_, fecId) -> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey fecId}) -- insert id
+                (Field state) = x ^. rlens @State
+                (Field district) = x ^. rlens @District
+                (idM, newMatched) = getIdAndUpdateMap name538 matched state district matcherMap
+                cid = maybe ("N/A") id idM
+            S.put (nextId + 1, newMatched)
+            return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey cid})
       getFECIdFoldM = FL.FoldM getFECId (return Seq.empty) return
   -- trying to do in memory first.  May need to stream it...
   loadedRows <- inCoreAoS (readTable houseForecastFile)
@@ -263,9 +277,9 @@ load538PollingData dbConn inputFile = do
   let (forecast538DbRows,(_,names538Map)) = S.runState (FL.foldM getFECIdFoldM loadedRows) (0,starting538NameMap)
   putStrLn $ "unmatched names: "
   print $ M.filter isNothing names538Map
---  putStrLn $ "Inserting " ++ show (Seq.length forecast538DbRows) ++ " 538 forecast rows into DB."
---  B.runBeamSqlite dbConn $ mapM_ (B.runInsert . B.insert (FEC._openFEC_DB_forecast538 FEC.openFEC_DB) . B.insertValues) $ chunksOf 90 $ F.toList $ forecast538DbRows
---  putStrLn $ "done inserting forecast rows."
+  putStrLn $ "Inserting " ++ show (Seq.length forecast538DbRows) ++ " 538 forecast rows into DB."
+  B.runBeamSqlite dbConn $ mapM_ (B.runInsert . B.insert (FEC._openFEC_DB_forecast538 FEC.openFEC_DB) . B.insertValues) $ chunksOf 90 $ F.toList $ forecast538DbRows
+  putStrLn $ "done inserting forecast rows."
   return ()
 
 {-

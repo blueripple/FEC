@@ -196,6 +196,11 @@ starting538NameMap = M.fromList
   [
     ("Phillip Aronoff",Just ("PHILLIP ARNOLD ARONOFF","H8TX29094"))
   , ("Rick Tyler", Just ("TYLER, RICK", "H6TN04218"))
+--  , ("Lisa Blunt Rochester",Just ("BLUNT ROCHESTER, LISA", "H6DE00206"))
+--  , ("Scott Walker", Just ("WALKER, SCOTT", "H6DE00214"))
+--  , ("Greg Gianforte", Just ("GIANFORTE, GREG","H8MT01182"))
+--  , ("Kathleen Williams", Just ("WILLIAMS, KATHLEEN","H8MT01232"))
+--  , ("Elinor Swanson", Just ("SWANSON, ELINOR","H8MT01257"))
 --  , ("Stephen J. Young", Just ("YOUNG, STEPHEN ROBERT NEALE","H8MI12112")) -- not sure about this.  Different names and districts.  Both in MI, tho
   ]
 
@@ -236,28 +241,32 @@ load538PollingData dbConn inputFile = do
             let name538 = (FEC._forecast538_candidate_name fcast)
                 fecNameAlreadyM = M.lookup name538 matched
             case fecNameAlreadyM of
-              Just fecNameM -> case fecNameM of
-                Nothing -> S.put (nextId + 1, matched) >> return (fs Seq.|> fcast) -- already tried to match but failed.  Put in the row without FEC Id
-                Just (_, fecId) ->  S.put (nextId + 1, matched) >> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey fecId}) -- insert id
-              Nothing -> do -- need to match this name
+              Just fecNameM -> case fecNameM of -- we've seen this name before, did we match it?
+                Nothing -> S.put (nextId + 1, matched) >> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey "UNMATCH"}) -- No.  Put in the row without FEC Id
+                Just (_, fecId) ->  S.put (nextId + 1, matched) >> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey fecId}) -- Yes. insert id
+              Nothing -> do -- New name. Try to match!
                 let (Field state) = x ^. rlens @State
                     (Field district) = x ^. rlens @District
                     fsAndMapM = M.lookup (state, district) matchMap
                 case fsAndMapM of
-                  Nothing -> S.put (nextId + 1, matched) >> return (fs Seq.|> fcast) -- Failed to match state/district. Shouldn't happen! Put in the row without FEC Id
+                  Nothing -> S.put (nextId + 1, matched) >> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey "ERROR!!"}) -- Failed to match state/district. Shouldn't happen! Put in the row without FEC Id
                   Just (fuzzy, m) -> do
                     let fecMatchM = FS.getOne fuzzy (toUpperLastName name538) >>= flip M.lookup m
                     S.put $ (nextId + 1, M.insert name538 fecMatchM matched) -- up the id and add this match
                     case fecMatchM of
-                      Nothing -> S.put (nextId + 1, matched) >> return (fs Seq.|> fcast) -- Fuzzy match failed. Put in the row without FEC Id.
+                      Nothing -> S.put (nextId + 1, matched) >> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey "UNMATCH"} ) -- Fuzzy match failed. Put in the row without FEC Id.
                       Just (_, fecId) -> return (fs Seq.|> fcast {FEC._forecast538_candidate_id = FEC.CandidateKey fecId}) -- insert id
       getFECIdFoldM = FL.FoldM getFECId (return Seq.empty) return
   -- trying to do in memory first.  May need to stream it...
   loadedRows <- inCoreAoS (readTable houseForecastFile)
   -- first pass, get unique names and match them
-  let (_,(_,names538Map)) = S.runState (FL.foldM getFECIdFoldM loadedRows) (0,starting538NameMap)
+  let (forecast538DbRows,(_,names538Map)) = S.runState (FL.foldM getFECIdFoldM loadedRows) (0,starting538NameMap)
+  putStrLn $ "unmatched names: "
   print $ M.filter isNothing names538Map
-
+--  putStrLn $ "Inserting " ++ show (Seq.length forecast538DbRows) ++ " 538 forecast rows into DB."
+--  B.runBeamSqlite dbConn $ mapM_ (B.runInsert . B.insert (FEC._openFEC_DB_forecast538 FEC.openFEC_DB) . B.insertValues) $ chunksOf 90 $ F.toList $ forecast538DbRows
+--  putStrLn $ "done inserting forecast rows."
+  return ()
 
 {-
   let matchName

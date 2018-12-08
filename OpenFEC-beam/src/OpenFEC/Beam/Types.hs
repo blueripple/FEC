@@ -309,15 +309,18 @@ data OpenFEC_DB f = OpenFEC_DB
   , _openFEC_DB_disbursement :: f (B.TableEntity DisbursementT)
   , _openFEC_DB_indExpenditure :: f (B.TableEntity IndExpenditureT)
   , _openFEC_DB_partyExpenditure :: f (B.TableEntity PartyExpenditureT)
+  , _openFEC_DB_forecast538 :: f (B.TableEntity Forecast538T)
   , _openFEC_DB_candidate_to_load :: f (B.TableEntity CandidateIdOnlyT)
   } deriving (Generic)
 
 OpenFEC_DB (B.TableLens openFEC_DB_candidate) (B.TableLens openFEC_DB_committee)
   (B.TableLens openFEC_DB_candidate_x_committee) (B.TableLens openFEC_DB_disbursement)
   (B.TableLens openFEC_DB_indExpenditure) (B.TableLens openFEC_DB_partyExpenditure)
-  (B.TableLens openFEC_DB_candidate_to_load) = B.dbLenses
+  (B.TableLens openFEC_forecast538) (B.TableLens openFEC_DB_candidate_to_load) = B.dbLenses
 
 instance B.Database be OpenFEC_DB
 
 openFEC_DB :: B.DatabaseSettings be OpenFEC_DB
 openFEC_DB = B.defaultDbSettings
+
+

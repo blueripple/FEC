@@ -224,6 +224,7 @@ decodeFrame id f =
       (Field p90_vs) = f ^. rlens @P90Voteshare
   in FEC.Forecast538 <$> dateM <*> pure (FEC.CandidateKey "") <*> pure name <*> pure incumbent <*> pure model <*> pure winP <*> pure voteshare <*> pure p10_vs <*> pure p90_vs <*> pure id
 
+{-
 getIdAndUpdateMap :: Text
                   -> M.Map Text (Maybe (FEC.Name, FEC.CandidateID))
                   -> FEC.State
@@ -237,16 +238,35 @@ getIdAndUpdateMap name idByName state district fuzzyAndMapByStateDistrict =
       case M.lookup (state, district) fuzzyAndMapByStateDistrict of
         Nothing -> (Just "SD Fail", idByName)
         Just (fuzzy, m) ->
-          case FS.getOne fuzzy (toUpperLastName name) of
+          case FS.getOne fuzzy (toUpperLastName name) of -- can be simplified from here down but we sacrifice error detail.  Can we either all this?
             Nothing -> (Just "fuzzyMatch fail", M.insert name Nothing idByName)
             Just fuzzyMatch ->
               case M.lookup fuzzyMatch m of
                 Nothing -> (Just "fuzzyMap fail", M.insert name Nothing idByName)
                 Just (fecName,cid) -> (Just cid, M.insert name (Just (fecName, cid)) idByName)
 
-{-              newMap = M.insert name matchM idByName
-          in (fmap snd matchM, newMap)
 -}
+maybeToEither :: a -> Maybe b -> Either a b
+maybeToEither x = maybe (Left x) Right
+
+getIdAndUpdateMap :: Text
+                  -> M.Map Text (Maybe (FEC.Name, FEC.CandidateID))
+                  -> FEC.State
+                  -> FEC.District
+                  -> M.Map (FEC.State, FEC.District) (FS.FuzzySet, M.Map Text (FEC.Name, FEC.CandidateID))
+                  -> (Maybe FEC.CandidateID, M.Map Text (Maybe (FEC.Name, FEC.CandidateID)))
+getIdAndUpdateMap name idByName state district fuzzyAndMapByStateDistrict =
+  case (fmap snd . join $ M.lookup name idByName) of
+    Just cid -> (Just cid, idByName)
+    Nothing ->
+      let x = do
+            (fuzzy, m) <- maybeToEither "SD Fail" $ M.lookup (state, district) fuzzyAndMapByStateDistrict
+            fuzzyMatch <- maybeToEither "fuzzyMatch fail" $  FS.getOne fuzzy (toUpperLastName name)
+            maybeToEither "fuzzyMap fail" $ M.lookup fuzzyMatch m
+      in case x of
+        Left err -> (Just err, M.insert name Nothing idByName)
+        Right (fecName, cid) -> (Just cid, M.insert name (Just (fecName, cid)) idByName)
+
 
 load538PollingData :: SL.Connection -> FilePath -> IO ()
 load538PollingData dbConn inputFile = do

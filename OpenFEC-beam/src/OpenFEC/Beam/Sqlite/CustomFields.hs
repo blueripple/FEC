@@ -65,6 +65,8 @@ instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax Party
 instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax Office
 instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax SpendingIntention
 
+instance B.IsSql92ExpressionSyntax s =>  B.HasSqlEqualityCheck s SpendingIntention
+
 {-
 --This doesn't belong here but is currently unused and I want to have a note of the syntax
 -- in case I need to do thinsg this way in the future

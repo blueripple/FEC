@@ -26,12 +26,13 @@ import qualified Database.Beam.Backend.SQL.BeamExtensions as BE
 import qualified Database.Beam.Sqlite                     as B
 import qualified Database.SQLite.Simple                   as SL
 
-import           Control.Lens                             ((^.))
+import           Control.Lens                             (to, (^.))
 import qualified Data.Text                                as T
 import           Data.Time.Calendar.WeekDate              (toWeekDate)
 import           Data.Time.LocalTime                      (LocalTime (..))
 import           Data.Tuple.Select                        (sel1, sel2, sel3,
-                                                           sel4)
+                                                           sel4, sel5, sel6,
+                                                           sel7, sel8)
 {-
 import           Control.Applicative                      ((<*>))
 import qualified Control.Foldl                            as FL
@@ -92,6 +93,15 @@ main = do
     partyExpenditures <- B.leftJoin_ aggregatedPartyExpenditures (\(id,date,_) -> (id `B.references_` candidate) B.&&. (date B.==. forecast ^. FEC.forecast538_forecast_date))
     B.guard_ ((FEC._forecast538_candidate_id forecast `B.references_` candidate)
               B.&&. (forecast ^. FEC.forecast538_model B.==. B.val_ "classic"))
-    pure (forecast ^. FEC.forecast538_candidate_name, forecast ^. FEC.forecast538_forecast_date, forecast ^. FEC.forecast538_winP, forecast ^. FEC.forecast538_voteshare, sel3 disbursement, sel4 indSupport, sel4 indOppose, sel3 partyExpenditures)
-  print forecasts
+    pure ( forecast ^. FEC.forecast538_candidate_name
+         , forecast ^. FEC.forecast538_forecast_date
+         , forecast ^. FEC.forecast538_winP
+         , forecast ^. FEC.forecast538_voteshare
+         , sel3 disbursement
+         , sel4 indSupport
+         , sel4 indOppose
+         , sel3 partyExpenditures)
+  let g = maybe 0 (maybe 0 id)
+      fixForecast x = (sel1 x, getDay $ sel2 x, sel3 x, sel4 x, g (sel5 x), g (sel6 x), g (sel7 x), g (sel8 x))
+  putStrLn $ show $ fmap fixForecast forecasts
 

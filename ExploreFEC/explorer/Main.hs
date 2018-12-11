@@ -26,16 +26,25 @@ import qualified Database.Beam.Backend.SQL.BeamExtensions as BE
 import qualified Database.Beam.Sqlite                     as B
 import qualified Database.SQLite.Simple                   as SL
 
-import           Control.Lens                             (to, (^.))
+import qualified Control.Foldl                            as FL
+import           Control.Lens                             (to, (.=), (^.))
+import           Control.Monad                            (forM_)
+import qualified Data.List                                as L
+import qualified Data.Set                                 as S
 import qualified Data.Text                                as T
 import           Data.Time.Calendar.WeekDate              (toWeekDate)
 import           Data.Time.LocalTime                      (LocalTime (..))
 import           Data.Tuple.Select                        (sel1, sel2, sel3,
                                                            sel4, sel5, sel6,
                                                            sel7, sel8)
+
+import qualified Graphics.Rendering.Chart.Backend.Cairo   as C
+import qualified Graphics.Rendering.Chart.Easy            as C
+
+
 {-
 import           Control.Applicative                      ((<*>))
-import qualified Control.Foldl                            as FL
+
 
 import           Control.Monad                            (forM_, join, mapM_,
                                                            sequence)
@@ -58,6 +67,9 @@ import qualified Text.PrettyPrint.Tabulate                as PP
 -- 1st just try to produce csv for one election, aggregated by a given timeframe.
 
 openFEC_SqliteFile = "/Users/adam/DataScience/DBs/FEC.db"
+
+data Forecast = Forecast { winP :: Double, voteShare :: Double {-, voteShare10 :: Double, voteShare90 :: Double -} } deriving (Show)
+data Spending = Spending { disbursement :: FEC.Amount, indSupport :: FEC.Amount, indOppose :: FEC.Amount, party :: FEC.Amount } deriving (Show)
 
 main :: IO ()
 main = do
@@ -84,7 +96,7 @@ main = do
         pe <- allPartyExpenditures
         pure (FEC._partyExpenditure_candidate_id pe, FEC._partyExpenditure_date pe, FEC._partyExpenditure_amount pe)
   dbConn <- SL.open openFEC_SqliteFile
-  forecasts <- B.runBeamSqlite dbConn $ B.runSelectReturningList $ B.select $ do
+  forecasts' <- B.runBeamSqlite dbConn $ B.runSelectReturningList $ B.select $ do
     candidate <- candidatesInElection
     forecast <- orderedForecasts
     disbursement <- B.leftJoin_ aggregatedDisbursements (\(id,date,_) -> (id `B.references_` candidate) B.&&. (date B.==. forecast ^. FEC.forecast538_forecast_date))
@@ -102,6 +114,13 @@ main = do
          , sel4 indOppose
          , sel3 partyExpenditures)
   let g = maybe 0 (maybe 0 id)
-      fixForecast x = (sel1 x, getDay $ sel2 x, sel3 x, sel4 x, g (sel5 x), g (sel6 x), g (sel7 x), g (sel8 x))
-  putStrLn $ show $ fmap fixForecast forecasts
-
+      fixForecast x = (sel1 x, sel2 x, Forecast (sel3 x) (sel4 x), Spending (g (sel5 x)) (g (sel6 x)) (g (sel7 x)) (g (sel8 x)))
+      forecasts = fixForecast <$> forecasts'
+      candidates = FL.fold FL.set (sel1 <$> forecasts)
+  C.toFile C.def (state ++ "-" ++ show district ++ ".png") $ do
+    C.layout_title .= "Spending and Forecast"
+    C.layout_y_axis . C.laxis_override .= C.axisGridHide
+--    C.layoutlr_right_axis . C.laxis_override .= C.axisGridHide
+    forM_ candidates $ \c -> do
+      let points :: [[(LocalTime, Double)]] = [fmap (\(_,d,f,_) -> (d, voteShare f)) $ L.filter (\x -> sel1 x == c) forecasts]
+      C.plot (C.line (T.unpack c) $ points)

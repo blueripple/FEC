@@ -85,6 +85,8 @@ executable explorer
                      , beam-core
                      , beam-migrate
                      , beam-sqlite
+                     , Chart
+                     , Chart-cairo
                      , containers
                      , foldl
                      , sqlite-simple

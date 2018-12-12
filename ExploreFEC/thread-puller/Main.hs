@@ -83,7 +83,7 @@ main = do
       cIds = ["P80001571"]
       payees = []
       jsonFileName = "spending.json"
-      queryData = True
+      queryData = False
       doIf doIt action = if doIt then action else return ()
       managerSettings = tlsManagerSettings { managerResponseTimeout = responseTimeoutMicro (120000000)
                                            , managerModifyRequest = \req -> FEC.delayQueries FEC.fecQueryLimit >> {- putStrLn req >> -}  return req

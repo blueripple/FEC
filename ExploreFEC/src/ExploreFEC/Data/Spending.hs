@@ -35,43 +35,43 @@ instance A.FromJSON CandidateSpending where
 instance A.ToJSON CandidateSpending where
   toJSON = A.genericToJSON A.defaultOptions {A.fieldLabelModifier = drop 1}
 
-getHouseRaceSpending :: FEC.State -> FEC.District -> FEC.ElectionYear -> ClientM [CandidateSpending]
-getHouseRaceSpending state district electionYear = do
+getHouseRaceSpending :: FEC.State -> FEC.District -> FEC.ElectionYear -> [T.Text] -> ClientM [CandidateSpending]
+getHouseRaceSpending state district electionYear payeeNames = do
   candidates <- FEC.getHouseCandidates state district (Just electionYear) []
-  spending <- sequence (flip getCandidateSpending electionYear <$> V.toList candidates)
+  spending <- sequence ((\x -> getCandidateSpending x electionYear payeeNames) <$> V.toList candidates)
   liftIO $ sequence $ fmap (putStrLn . T.unpack . describeSpending) spending
   return spending
 
-getSenateRaceSpending :: FEC.State -> FEC.ElectionYear -> ClientM [CandidateSpending]
-getSenateRaceSpending state electionYear = do
+getSenateRaceSpending :: FEC.State -> FEC.ElectionYear -> [T.Text] -> ClientM [CandidateSpending]
+getSenateRaceSpending state electionYear payeeNames = do
   candidates <- FEC.getSenateCandidates state (Just electionYear) []
-  spending <- sequence (flip getCandidateSpending electionYear <$> V.toList candidates)
+  spending <- sequence ((\x -> getCandidateSpending x electionYear payeeNames) <$> V.toList candidates)
   liftIO $ sequence $ fmap (putStrLn . T.unpack . describeSpending) spending
   return spending
 
 -- This might need some tweaking to get 4-year data
-getPresidentialRaceSpending :: FEC.ElectionYear -> ClientM [CandidateSpending]
-getPresidentialRaceSpending electionYear = do
+getPresidentialRaceSpending :: FEC.ElectionYear -> [T.Text] -> ClientM [CandidateSpending]
+getPresidentialRaceSpending electionYear payeeNames = do
   candidates <- FEC.getPresidentialCandidates electionYear
-  spending <- sequence (flip getCandidateSpending electionYear <$> V.toList candidates)
+  spending <- sequence ((\x -> getCandidateSpending x electionYear payeeNames) <$> V.toList candidates)
   liftIO $ sequence $ fmap (putStrLn . T.unpack . describeSpending) spending
   return spending
 
-getCandidateSpending' :: FEC.Candidate -> [FEC.CommitteeID] -> FEC.ElectionYear -> ClientM CandidateSpending
-getCandidateSpending' cand committeeIDs electionYear = do
+getCandidateSpending' :: FEC.Candidate -> [FEC.CommitteeID] -> FEC.ElectionYear -> [T.Text] -> ClientM CandidateSpending
+getCandidateSpending' cand committeeIDs electionYear payeeNames = do
   let candidateId = FEC._candidate_id cand
-      getDisbursements x = FEC.getDisbursements x candidateId electionYear
+      getDisbursements x = FEC.getDisbursements x candidateId electionYear [] []
 --  liftIO $ putStrLn $ "committees: " ++ show (FEC._committee_id <$> committees)
-  disbursements <- fmap V.concat . sequence $ (getDisbursements <$> committeeIDs)
-  indExpenditures <- FEC.getIndependentExpendituresByCandidate candidateId [electionYear]
-  partyExpenditures <- FEC.getPartyExpenditures candidateId [electionYear]
+  disbursements <- getDisbursements committeeIDs
+  indExpenditures <- FEC.getIndependentExpendituresByCandidate candidateId [electionYear] []
+  partyExpenditures <- FEC.getPartyExpenditures candidateId [electionYear] []
   return $ CandidateSpending cand disbursements indExpenditures partyExpenditures
 
-getCandidateSpending :: FEC.Candidate -> FEC.ElectionYear -> ClientM CandidateSpending
-getCandidateSpending cand electionYear = do
+getCandidateSpending :: FEC.Candidate -> FEC.ElectionYear -> [T.Text] -> ClientM CandidateSpending
+getCandidateSpending cand electionYear payeeNames = do
   let candidateID = FEC._candidate_id cand
   committees <- FEC.getCommitteesByCandidate candidateID (Just electionYear) []
-  getCandidateSpending' cand (fmap FEC._committee_id . V.toList $ committees) electionYear
+  getCandidateSpending' cand (fmap FEC._committee_id . V.toList $ committees) electionYear payeeNames
 
 describeSpending :: CandidateSpending -> T.Text
 describeSpending (CandidateSpending c d i p) =

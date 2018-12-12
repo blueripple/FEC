@@ -103,3 +103,35 @@ executable explorer
   hs-source-dirs:      explorer  
   default-language:    Haskell2010
 
+
+executable thread-puller
+  main-is:             Main.hs
+  build-depends:       base >=4.11 && <4.12
+                     , aeson
+                     , beam-core
+                     , beam-migrate
+                     , beam-sqlite
+                     , Chart
+                     , Chart-cairo
+                     , containers
+                     , foldl
+                     , fuzzyset
+                     , http-client >= 0.5.12
+                     , http-client-tls
+                     , sqlite-simple
+                     , servant-client
+                     , lens
+                     , mtl
+                     , pptable
+                     , text
+                     , time
+                     , transformers
+                     , tuple
+                     , vector
+                     , vinyl
+                     , ExploreFEC
+                     , OpenFEC-servant
+                     , OpenFEC-beam
+  hs-source-dirs:      thread-puller  
+  default-language:    Haskell2010
+

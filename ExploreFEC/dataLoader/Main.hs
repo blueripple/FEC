@@ -151,7 +151,7 @@ loadSpendingForCandidate runServant dbConn candidate electionYear = do
   cxcs :: [FEC.Candidate_x_Committee] <- B.runBeamSqlite dbConn $ B.runSelectReturningList $ B.select $ committeeIDsForCandidateID candidate
   let committeeIDs = (\(FEC.CommitteeKey x) -> x) . FEC._candidate_x_committee_committee_id <$> cxcs
   putStrLn $ "Querying OpenFEC for spending by/for " ++ T.unpack (FEC._candidate_name candidate)
-  candidateSpendingE <- runServant $ getCandidateSpending' candidate committeeIDs electionYear
+  candidateSpendingE <- runServant $ getCandidateSpending' candidate committeeIDs electionYear []
   case candidateSpendingE of
     Left err -> putStrLn $ "Servant Query returned an error: " ++ show err
     Right candidateSpending -> do

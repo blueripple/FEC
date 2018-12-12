@@ -27,9 +27,13 @@ import qualified Database.Beam.Sqlite                     as B
 import qualified Database.SQLite.Simple                   as SL
 
 import qualified Control.Foldl                            as FL
-import           Control.Lens                             (to, (.=), (^.))
+import           Control.Lens                             (to, (.=), (.~), (^.))
 import           Control.Monad                            (forM_)
+import qualified Data.Foldable                            as F
 import qualified Data.List                                as L
+import qualified Data.List                                as L
+import qualified Data.Map                                 as M
+import qualified Data.Sequence                            as Seq
 import qualified Data.Set                                 as S
 import qualified Data.Text                                as T
 import           Data.Time.Calendar.WeekDate              (toWeekDate)
@@ -37,6 +41,7 @@ import           Data.Time.LocalTime                      (LocalTime (..))
 import           Data.Tuple.Select                        (sel1, sel2, sel3,
                                                            sel4, sel5, sel6,
                                                            sel7, sel8)
+
 
 import qualified Graphics.Rendering.Chart.Backend.Cairo   as C
 import qualified Graphics.Rendering.Chart.Easy            as C
@@ -52,11 +57,10 @@ import           Control.Monad.IO.Class                   (liftIO)
 import qualified Control.Monad.State                      as S
 
 import           Data.Aeson                               (encodeFile)
-import qualified Data.Foldable                            as F
-import qualified Data.List                                as L
-import qualified Data.Map                                 as M
+
+
 import           Data.Maybe                               (isNothing)
-import qualified Data.Sequence                            as Seq
+
 
 
 import qualified Data.Vector                              as V
@@ -116,11 +120,35 @@ main = do
   let g = maybe 0 (maybe 0 id)
       fixForecast x = (sel1 x, sel2 x, Forecast (sel3 x) (sel4 x), Spending (g (sel5 x)) (g (sel6 x)) (g (sel7 x)) (g (sel8 x)))
       forecasts = fixForecast <$> forecasts'
-      candidates = FL.fold FL.set (sel1 <$> forecasts)
+--      addOne :: Num b => a -> b -> Seq.Seq (a,b) -> Seq.Seq (a,b)
+      addOne x y h Seq.Empty               = Seq.singleton (x,y)
+      addOne x y h s@(_ Seq.:|> (_,prevY)) = s Seq.|> (x,h prevY y)
+  --    accum :: (c -> a) -> (c -> b) -> FL.Fold c [(a,b)]
+      accum getX getY g = FL.Fold (\seq c -> addOne (getX c) (getY c) g seq) Seq.empty F.toList
+      h = \q -> accum (\f -> (sel1 f, sel2 f)) q (+)
+      allSpend f = let s = sel4 f in (disbursement s) + (indSupport s) + (indOppose s) + (party s)
+      candidatesMF = FL.Fold (\m f -> M.insert (sel1 f) (voteShare . sel3 $ f) m) M.empty id --FL.premap sel1 FL.set
+      (candidatesM, vs, ts, total) =
+        let spend = sel4
+        in FL.fold ((,,,)
+                     <$> candidatesMF
+                     <*> accum (\f -> (sel1 f, sel2 f)) (voteShare . sel3) (\x y -> y)
+                     <*> accum (\f -> (sel1 f, sel2 f)) (\f -> let s = sel4 f in (disbursement s + indSupport s + party s - indOppose s)) (+)
+                     <*> FL.premap allSpend FL.sum) forecasts
+      topTwo = L.take 2 . reverse $ fst <$> (L.sortBy (\x y -> compare (snd x) (snd y)) $ M.toList candidatesM)
+      c1 = head topTwo
+      c2 = head $ tail topTwo
   C.toFile C.def (state ++ "-" ++ show district ++ ".png") $ do
-    C.layout_title .= "Spending and Forecast"
-    C.layout_y_axis . C.laxis_override .= C.axisGridHide
---    C.layoutlr_right_axis . C.laxis_override .= C.axisGridHide
-    forM_ candidates $ \c -> do
-      let points :: [[(LocalTime, Double)]] = [fmap (\(_,d,f,_) -> (d, voteShare f)) $ L.filter (\x -> sel1 x == c) forecasts]
-      C.plot (C.line (T.unpack c) $ points)
+    C.layoutlr_title .= "Spending and Forecast"
+    C.layoutlr_left_axis . C.laxis_override .= C.axisGridHide
+    C.layoutlr_right_axis . C.laxis_override .= C.axisGridHide
+    forM_ topTwo $ \c -> do
+      let vs_points = [fmap (\((_,x),y) -> (x, y)) $ L.filter (\((n,_),_) -> n == c) vs]
+          vs_style = id
+      C.plotLeft $ vs_style <$> (C.line (T.unpack c ++ "_voteshare") $ vs_points)
+    let t_points1 = fmap (\((_,x),y) -> (x, y/total)) $ L.filter (\((n,_),_) -> n == c1) ts
+        t_points2 = fmap (\((_,x),y) -> (x, y/total)) $ L.filter (\((n,_),_) -> n == c2) ts
+        t_points = [fmap (\((x,y),z) -> (x,y-z)) $ zip t_points1 (snd <$> t_points2)]
+        d_style = C.plot_lines_style . C.line_dashes .~ [5,5]
+    C.plotRight $ d_style <$> (C.line ("(" ++ T.unpack c1 ++ "$ - " ++ T.unpack c2 ++ "$)/Total$") $ t_points)
+

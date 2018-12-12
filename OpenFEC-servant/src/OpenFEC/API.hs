@@ -43,13 +43,13 @@ baseUrl = BaseUrl Https "api.open.fec.gov" 443 "/v1"
 
 data FEC_Routes route = FEC_Routes
   {
-    _candidates :: route :- "candidates" :> QueryParam "api_key" Text :> QueryParams "candidate_status" Text :> QueryParams "office" Text :> QueryParams "party" Text :> QueryParam "state" Text :> QueryParam "district" Int :>  QueryParam "election_year" Int :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
+    _candidates :: route :- "candidates" :> QueryParam "api_key" Text :> QueryParams "candidate_status" Text :> QueryParams "office" Text :> QueryParams "party" Text :> QueryParam "state" Text :> QueryParam "district" Int :>  QueryParam "election_year" Int :> QueryParams "cycle" Int :> QueryParams "candidate_id" Text :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
   , _committees :: route :- "committees" :> QueryParam "api_key" Text :> QueryParam "election_year" Int :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
   , _committeesByCandidate :: route :- "candidate" :> Capture "candidate_id" Text :> "committees" :> QueryParam "api_key" Text :> QueryParam "election_year" Int :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
   , _reports :: route :- "committee" :> Capture "committee_id" Text :> "reports" :> QueryParam "api_key" Text :> QueryParams "report_type" Text :> QueryParams "year" Int :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
-  , _disbursements :: route :- "schedules" :> "schedule_b" :> QueryParam "api_key" Text :> QueryParam "committee_id" Text :> QueryParam "two_year_transaction_period" Int :> QueryParam "per_page" Int :> QueryParam "last_index" Int :> QueryParam "last_disbursement_date" LocalTime :> Get '[JSON] A.Value
-  , _independent_expenditures :: route :- "schedules" :> "schedule_e" :> QueryParam "api_key" Text :> QueryParam "candidate_id" Text :> QueryParam "committee_id" Text :> QueryParams "cycle" Int :> QueryParam "last_index" Int :> QueryParam "last_expenditure_date" LocalTime :> Get '[JSON] A.Value
-  , _party_expenditures :: route :- "schedules" :> "schedule_f" :>  QueryParam "api_key" Text :> QueryParam "candidate_id" Text :> QueryParams "cycle" Int :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
+  , _disbursements :: route :- "schedules" :> "schedule_b" :> QueryParam "api_key" Text :> QueryParams "committee_id" Text :> QueryParam "two_year_transaction_period" Int :> QueryParams "recipient_name" Text :> QueryParams "recipient_committee_id" Text :> QueryParam "per_page" Int :> QueryParam "last_index" Int :> QueryParam "last_disbursement_date" LocalTime :> Get '[JSON] A.Value
+  , _independent_expenditures :: route :- "schedules" :> "schedule_e" :> QueryParam "api_key" Text :> QueryParam "candidate_id" Text :> QueryParam "committee_id" Text :> QueryParams "cycle" Int :> QueryParams "payee_name" Text :> QueryParam "last_index" Int :> QueryParam "last_expenditure_date" LocalTime :> Get '[JSON] A.Value
+  , _party_expenditures :: route :- "schedules" :> "schedule_f" :>  QueryParam "api_key" Text :> QueryParam "candidate_id" Text :> QueryParams "cycle" Int :> QueryParams "payee_name" Text :> QueryParam "per_page" Int :> QueryParam "page" Int :> Get '[JSON] FEC.Page
   }
   deriving (Generic)
 
@@ -84,12 +84,21 @@ delayQueries (QueryLimit n per) =
 
 getCandidatesPage :: [FEC.Office] -> [FEC.Party] -> Maybe FEC.State -> Maybe FEC.District -> Maybe FEC.ElectionYear -> [FEC.ElectionYear] -> FEC.PageNumber -> ClientM FEC.Page
 getCandidatesPage offices parties stateM districtM electionYearM cycles page =
-  (_candidates fecClients) (Just fecApiKey) [] (FEC.officeToText <$> offices) (FEC.partyToText <$> parties) stateM districtM electionYearM cycles (Just fecMaxPerPage) (Just page)
+  (_candidates fecClients) (Just fecApiKey) [] (FEC.officeToText <$> offices) (FEC.partyToText <$> parties) stateM districtM electionYearM cycles [] (Just fecMaxPerPage) (Just page)
 
 getCandidates :: [FEC.Office] -> [FEC.Party] ->  Maybe FEC.State -> Maybe FEC.District -> Maybe FEC.ElectionYear ->  [FEC.ElectionYear] -> ClientM (Vector FEC.Candidate)
 getCandidates offices parties stateM districtM electionYearM cycles =
     let getOnePage = getCandidatesPage offices parties stateM districtM electionYearM cycles
     in FEC.getAllPages Nothing FEC.SkipFailed getOnePage FEC.candidateFromResultJSON
+
+getCandidatesByIdPage :: [FEC.CandidateID] -> FEC.PageNumber -> ClientM FEC.Page
+getCandidatesByIdPage cids page =
+  (_candidates fecClients) (Just fecApiKey) [] [] [] Nothing Nothing Nothing [] cids (Just fecMaxPerPage) (Just page)
+
+getCandidatesById :: [FEC.CandidateID] -> ClientM (Vector FEC.Candidate)
+getCandidatesById cids =
+  let getOnePage = getCandidatesByIdPage cids
+  in FEC.getAllPages Nothing FEC.SkipFailed getOnePage FEC.candidateFromResultJSON
 
 getHouseCandidates :: FEC.State -> FEC.District -> Maybe FEC.ElectionYear -> [FEC.ElectionYear]  -> ClientM (Vector FEC.Candidate)
 getHouseCandidates state district electionYearM cycles = getCandidates [FEC.House] [] (Just state) (Just district) electionYearM cycles
@@ -133,28 +142,28 @@ getReportsByCandidate id reportType electionYears electionCycles = do
   committeesM <- getCommittees id electionYears
 -}
 
-getDisbursementsIPage :: FEC.CommitteeID -> FEC.ElectionYear -> Maybe Int -> Maybe LocalTime -> ClientM (FEC.IndexedPage LocalTime)
-getDisbursementsIPage cid electionYear lastIndexM lastDisbursementDateM = do
-  json <- (_disbursements fecClients) (Just fecApiKey) (Just cid) (Just electionYear) (Just fecMaxPerPage) lastIndexM lastDisbursementDateM
+getDisbursementsIPage :: [FEC.CommitteeID] -> FEC.ElectionYear -> [Text] -> [FEC.CommitteeID] -> Maybe Int -> Maybe LocalTime ->  ClientM (FEC.IndexedPage LocalTime)
+getDisbursementsIPage cids electionYear recipientNames recipientIds lastIndexM lastDisbursementDateM = do
+  json <- (_disbursements fecClients) (Just fecApiKey) cids (Just electionYear) recipientNames recipientIds (Just fecMaxPerPage) lastIndexM lastDisbursementDateM
   let parsedE = FEC.getIndexedPageE "last_disbursement_date" json
   case parsedE of
     Left errBS -> throw $ err417 { errBody = "Decoding Error (Aeson.Value -> FEC.IndexedPage LocalTime) in getDisbursementsIPage. " <> errBS }
     Right ip -> return ip
 
-getDisbursements :: FEC.CommitteeID -> FEC.CandidateID -> FEC.ElectionYear -> ClientM (Vector FEC.Disbursement)
-getDisbursements coid caid electionYear = do
+getDisbursements :: [FEC.CommitteeID] -> FEC.CandidateID -> FEC.ElectionYear -> [Text] -> [FEC.CommitteeID] -> ClientM (Vector FEC.Disbursement)
+getDisbursements coids caid electionYear recipientNames recipientIds = do
   let getOnePage x = case x of
-        Nothing -> getDisbursementsIPage coid electionYear Nothing Nothing
-        Just (FEC.LastIndex li ldd) -> getDisbursementsIPage coid electionYear (Just li) (Just ldd)
+        Nothing -> getDisbursementsIPage coids electionYear recipientNames recipientIds Nothing Nothing
+        Just (FEC.LastIndex li ldd) -> getDisbursementsIPage coids electionYear recipientNames recipientIds (Just li) (Just ldd)
   raw <- FEC.getAllIndexedPages Nothing FEC.NoneIfAnyFailed getOnePage (FEC.disbursementFromResultJSON caid)
   let nonZero x = FEC._disbursement_amount_adj x /= 0
       adj = V.filter nonZero raw
-  liftIO $ putStrLn $ unpack coid ++ ": Dropped " ++ show ((V.length raw) - (V.length adj)) ++ " entries from disbursements since they were not for this candidate."
+  liftIO . putStrLn $ "Dropped " ++ show ((V.length raw) - (V.length adj)) ++ " entries from disbursements since they were not for this candidate (" ++ (unpack caid) ++ ")."
   return adj
 
-getIndependentExpendituresByCandidateIPage :: FEC.CandidateID -> [FEC.ElectionYear] -> Maybe Int -> Maybe LocalTime -> ClientM (FEC.IndexedPage LocalTime)
-getIndependentExpendituresByCandidateIPage cid cycles liM leM = do
-  json <- (_independent_expenditures fecClients) (Just fecApiKey) (Just cid) Nothing cycles liM leM
+getIndependentExpendituresByCandidateIPage :: FEC.CandidateID -> [FEC.ElectionYear] -> [Text] -> Maybe Int -> Maybe LocalTime -> ClientM (FEC.IndexedPage LocalTime)
+getIndependentExpendituresByCandidateIPage cid cycles payeeNames liM leM = do
+  json <- (_independent_expenditures fecClients) (Just fecApiKey) (Just cid) Nothing cycles payeeNames liM leM
   let parsedE = FEC.getIndexedPageE "last_expenditure_date" json
   case parsedE of
     Left errBS -> throw $ err417 { errBody = "Decoding Error (Aeson.Value -> FEC.IndexedPage LocalTime) in getIndependentExpendituresIPageByCandidate. " <> errBS }
@@ -183,39 +192,39 @@ fixIndEx x =
         return $ ie { FEC._indExpenditure_amount_from_ytd = adjAmount }
   in V.reverse $ S.evalState (V.mapM g (V.reverse deduped)) M.empty
 
-getIndependentExpendituresByCommitteeIPage :: FEC.CommitteeID -> [FEC.ElectionYear] -> Maybe Int -> Maybe LocalTime -> ClientM (FEC.IndexedPage LocalTime)
-getIndependentExpendituresByCommitteeIPage cid cycles liM leM = do
-  json <- (_independent_expenditures fecClients) (Just fecApiKey) Nothing (Just cid) cycles liM leM
+getIndependentExpendituresByCommitteeIPage :: FEC.CommitteeID -> [FEC.ElectionYear] -> [Text] -> Maybe Int -> Maybe LocalTime -> ClientM (FEC.IndexedPage LocalTime)
+getIndependentExpendituresByCommitteeIPage cid cycles payeeNames liM leM = do
+  json <- (_independent_expenditures fecClients) (Just fecApiKey) Nothing (Just cid) cycles payeeNames liM leM
   let parsedE = FEC.getIndexedPageE "last_expenditure_date" json
   case parsedE of
     Left errBS -> throw $ err417 { errBody = "Decoding Error (Aeson.Value -> FEC.IndexedPage LocalTime) in getIndependentExpendituresIPageByCandidate. " <> errBS }
     Right ip -> return ip
 
 -- There are some with no support/oppose indicator.  No idea what to do.  Assume support?  Drop?
-getIndependentExpendituresByCandidate :: FEC.CandidateID -> [FEC.ElectionYear] -> ClientM (Vector FEC.IndExpenditure)
-getIndependentExpendituresByCandidate cid cycles = do
+getIndependentExpendituresByCandidate :: FEC.CandidateID -> [FEC.ElectionYear] -> [Text] -> ClientM (Vector FEC.IndExpenditure)
+getIndependentExpendituresByCandidate cid cycles payeeNames = do
   let getOnePage x = case x of
-        Nothing -> getIndependentExpendituresByCandidateIPage cid cycles Nothing Nothing
-        Just (FEC.LastIndex li led) -> getIndependentExpendituresByCandidateIPage cid cycles (Just li) (Just led)
+        Nothing -> getIndependentExpendituresByCandidateIPage cid cycles payeeNames Nothing Nothing
+        Just (FEC.LastIndex li led) -> getIndependentExpendituresByCandidateIPage cid cycles payeeNames (Just li) (Just led)
   raw <- FEC.getAllIndexedPages Nothing FEC.SkipFailed getOnePage FEC.indExpenditureFromResultJSON
   let deduped = fixIndEx raw
       num_dupes = V.length raw - V.length deduped
   liftIO . putStrLn $ "Dropped " ++ (show num_dupes) ++ " duplicates from independent expenditures (Candidate ID: " ++ show cid ++ ")."
   return deduped
 
-getIndependentExpendituresByCommittee :: FEC.CommitteeID -> [FEC.ElectionYear] -> ClientM (Vector FEC.IndExpenditure)
-getIndependentExpendituresByCommittee cid cycles =
+getIndependentExpendituresByCommittee :: FEC.CommitteeID -> [FEC.ElectionYear] -> [Text] -> ClientM (Vector FEC.IndExpenditure)
+getIndependentExpendituresByCommittee cid cycles payeeNames =
   let getOnePage x = case x of
-        Nothing -> getIndependentExpendituresByCommitteeIPage cid cycles Nothing Nothing
-        Just (FEC.LastIndex li led) -> getIndependentExpendituresByCommitteeIPage cid cycles (Just li) (Just led)
+        Nothing -> getIndependentExpendituresByCommitteeIPage cid cycles payeeNames Nothing Nothing
+        Just (FEC.LastIndex li led) -> getIndependentExpendituresByCommitteeIPage cid cycles payeeNames (Just li) (Just led)
   in FEC.getAllIndexedPages Nothing FEC.SkipFailed getOnePage FEC.indExpenditureFromResultJSON
 
-getPartyExpendituresPage :: FEC.CandidateID -> [FEC.ElectionYear] -> FEC.PageNumber -> ClientM FEC.Page
-getPartyExpendituresPage cid cycles page =
-  (_party_expenditures fecClients) (Just fecApiKey) (Just cid) cycles (Just fecMaxPerPage) (Just page)
+getPartyExpendituresPage :: FEC.CandidateID -> [FEC.ElectionYear] -> [Text] -> FEC.PageNumber -> ClientM FEC.Page
+getPartyExpendituresPage cid cycles payeeNames page =
+  (_party_expenditures fecClients) (Just fecApiKey) (Just cid) cycles payeeNames (Just fecMaxPerPage) (Just page)
 
-getPartyExpenditures :: FEC.CandidateID -> [FEC.ElectionYear] -> ClientM (Vector FEC.PartyExpenditure)
-getPartyExpenditures cid cycles =
-  let getOnePage = getPartyExpendituresPage cid cycles
+getPartyExpenditures :: FEC.CandidateID -> [FEC.ElectionYear] -> [Text] -> ClientM (Vector FEC.PartyExpenditure)
+getPartyExpenditures cid cycles payeeNames =
+  let getOnePage = getPartyExpendituresPage cid cycles payeeNames
   in FEC.getAllPages Nothing FEC.SkipFailed getOnePage (FEC.partyExpenditureFromResultJSON cid)
 

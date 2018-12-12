@@ -41,6 +41,8 @@ import           Data.Time.LocalTime                      (LocalTime (..))
 import           Data.Tuple.Select                        (sel1, sel2, sel3,
                                                            sel4, sel5, sel6,
                                                            sel7, sel8)
+import           Formattable.NumFormat                    (formatNum, usdFmt)
+--import           Text.Printf                              (printf)
 
 
 import qualified Graphics.Rendering.Chart.Backend.Cairo   as C
@@ -77,8 +79,8 @@ data Spending = Spending { disbursement :: FEC.Amount, indSupport :: FEC.Amount,
 
 main :: IO ()
 main = do
-  let state = "NY"
-      district = 11
+  let state = "GA"
+      district = 6
       allCandidates = B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
       allForecasts = B.all_ (FEC._openFEC_DB_forecast538 FEC.openFEC_DB)
       allDisbursements = B.all_ (FEC._openFEC_DB_disbursement FEC.openFEC_DB)
@@ -108,7 +110,7 @@ main = do
     indOppose <- B.leftJoin_ aggregatedIEOppose (\(id,date,_,_) -> (id `B.references_` candidate) B.&&. (date B.==. forecast ^. FEC.forecast538_forecast_date))
     partyExpenditures <- B.leftJoin_ aggregatedPartyExpenditures (\(id,date,_) -> (id `B.references_` candidate) B.&&. (date B.==. forecast ^. FEC.forecast538_forecast_date))
     B.guard_ ((FEC._forecast538_candidate_id forecast `B.references_` candidate)
-              B.&&. (forecast ^. FEC.forecast538_model B.==. B.val_ "classic"))
+              B.&&. (forecast ^. FEC.forecast538_model B.==. B.val_ "deluxe"))
     pure ( forecast ^. FEC.forecast538_candidate_name
          , forecast ^. FEC.forecast538_forecast_date
          , forecast ^. FEC.forecast538_winP
@@ -125,30 +127,32 @@ main = do
       addOne x y h s@(_ Seq.:|> (_,prevY)) = s Seq.|> (x,h prevY y)
   --    accum :: (c -> a) -> (c -> b) -> FL.Fold c [(a,b)]
       accum getX getY g = FL.Fold (\seq c -> addOne (getX c) (getY c) g seq) Seq.empty F.toList
-      h = \q -> accum (\f -> (sel1 f, sel2 f)) q (+)
+      h = accum (\f -> (sel1 f, sel2 f))
       allSpend f = let s = sel4 f in (disbursement s) + (indSupport s) + (indOppose s) + (party s)
       candidatesMF = FL.Fold (\m f -> M.insert (sel1 f) (voteShare . sel3 $ f) m) M.empty id --FL.premap sel1 FL.set
       (candidatesM, vs, ts, total) =
         let spend = sel4
         in FL.fold ((,,,)
                      <$> candidatesMF
-                     <*> accum (\f -> (sel1 f, sel2 f)) (voteShare . sel3) (\x y -> y)
-                     <*> accum (\f -> (sel1 f, sel2 f)) (\f -> let s = sel4 f in (disbursement s + indSupport s + party s - indOppose s)) (+)
+                     <*> h (voteShare . sel3) (\x y -> y)
+                     <*> h (\f -> let s = sel4 f in (disbursement s + indSupport s + party s - indOppose s)) (+)
                      <*> FL.premap allSpend FL.sum) forecasts
       topTwo = L.take 2 . reverse $ fst <$> (L.sortBy (\x y -> compare (snd x) (snd y)) $ M.toList candidatesM)
       c1 = head topTwo
       c2 = head $ tail topTwo
   C.toFile C.def (state ++ "-" ++ show district ++ ".png") $ do
-    C.layoutlr_title .= "Spending and Forecast"
+    C.layoutlr_title .= "Differential Spending and Forecast Voteshare (" ++ (T.unpack $ formatNum usdFmt total) ++ " spent)"
     C.layoutlr_left_axis . C.laxis_override .= C.axisGridHide
+    C.layoutlr_left_axis . C.laxis_title .= "Forecast Vote Share (538)"
     C.layoutlr_right_axis . C.laxis_override .= C.axisGridHide
+    C.layoutlr_right_axis . C.laxis_title .= "Spending Differential (% of total spent)"
     forM_ topTwo $ \c -> do
       let vs_points = [fmap (\((_,x),y) -> (x, y)) $ L.filter (\((n,_),_) -> n == c) vs]
           vs_style = id
-      C.plotLeft $ vs_style <$> (C.line (T.unpack c ++ "_voteshare") $ vs_points)
+      C.plotLeft $ vs_style <$> (C.line (T.unpack c) $ vs_points)
     let t_points1 = fmap (\((_,x),y) -> (x, y/total)) $ L.filter (\((n,_),_) -> n == c1) ts
         t_points2 = fmap (\((_,x),y) -> (x, y/total)) $ L.filter (\((n,_),_) -> n == c2) ts
-        t_points = [fmap (\((x,y),z) -> (x,y-z)) $ zip t_points1 (snd <$> t_points2)]
+        t_points = [fmap (\((x,y),z) -> (x,C.Percent $ 100*(y-z))) $ zip t_points1 (snd <$> t_points2)]
         d_style = C.plot_lines_style . C.line_dashes .~ [5,5]
-    C.plotRight $ d_style <$> (C.line ("(" ++ T.unpack c1 ++ "$ - " ++ T.unpack c2 ++ "$)/Total$") $ t_points)
+    C.plotRight $ d_style <$> (C.line (T.unpack c1 ++ " - " ++ T.unpack c2) $ t_points)
 

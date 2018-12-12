@@ -88,6 +88,7 @@ executable explorer
                      , Chart
                      , Chart-cairo
                      , containers
+                     , formattable
                      , foldl
                      , sqlite-simple
                      , lens

@@ -81,6 +81,7 @@ executable dataLoader
 
 executable explorer
   main-is:             Main.hs
+  other-modules:       ByRace
   build-depends:       base >=4.11 && <4.12
                      , beam-core
                      , beam-migrate
@@ -88,6 +89,7 @@ executable explorer
                      , Chart
                      , Chart-cairo
                      , containers
+                     , data-default
                      , formattable
                      , foldl
                      , sqlite-simple

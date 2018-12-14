@@ -66,6 +66,7 @@ instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax Office
 instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax SpendingIntention
 
 instance B.IsSql92ExpressionSyntax s =>  B.HasSqlEqualityCheck s SpendingIntention
+instance B.IsSql92ExpressionSyntax s =>  B.HasSqlEqualityCheck s Office
 
 {-
 --This doesn't belong here but is currently unused and I want to have a note of the syntax

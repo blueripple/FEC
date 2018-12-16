@@ -301,6 +301,32 @@ instance B.Table Forecast538T where
 instance B.Beamable Forecast538T
 instance B.Beamable (B.PrimaryKey Forecast538T)
 
+
+--
+data ElectionResultT f = ElectionResult
+  {
+    _electionResult_candidate_id   :: B.PrimaryKey CandidateT f
+  , _electionResult_candidate_name :: C f Text
+  , _electionResult_voteshare      :: C f Double
+  } deriving (Generic)
+
+ElectionResult (CandidateKey (B.LensFor electionResult_candidate_id))
+  (B.LensFor electionResult_candidate_name)
+  (B.LensFor electionResult_voteshare) = B.tableLenses
+
+type ElectionResult = ElectionResultT Identity
+type ElectionResultKey = B.PrimaryKey ElectionResultT Identity
+
+deriving instance Show ElectionResult
+deriving instance Eq ElectionResult
+
+instance B.Table ElectionResultT where
+  data PrimaryKey ElectionResultT f = ElectionResultKey (B.PrimaryKey CandidateT f) deriving (Generic)
+  primaryKey = ElectionResultKey . _electionResult_candidate_id
+
+instance B.Beamable ElectionResultT
+instance B.Beamable (B.PrimaryKey ElectionResultT)
+
 data OpenFEC_DB f = OpenFEC_DB
   {
     _openFEC_DB_candidate :: f (B.TableEntity CandidateT)
@@ -310,13 +336,15 @@ data OpenFEC_DB f = OpenFEC_DB
   , _openFEC_DB_indExpenditure :: f (B.TableEntity IndExpenditureT)
   , _openFEC_DB_partyExpenditure :: f (B.TableEntity PartyExpenditureT)
   , _openFEC_DB_forecast538 :: f (B.TableEntity Forecast538T)
+  , _openFEC_DB_electionResult :: f (B.TableEntity ElectionResultT)
   , _openFEC_DB_candidate_to_load :: f (B.TableEntity CandidateIdOnlyT)
   } deriving (Generic)
 
 OpenFEC_DB (B.TableLens openFEC_DB_candidate) (B.TableLens openFEC_DB_committee)
   (B.TableLens openFEC_DB_candidate_x_committee) (B.TableLens openFEC_DB_disbursement)
   (B.TableLens openFEC_DB_indExpenditure) (B.TableLens openFEC_DB_partyExpenditure)
-  (B.TableLens openFEC_forecast538) (B.TableLens openFEC_DB_candidate_to_load) = B.dbLenses
+  (B.TableLens openFEC_forecast538) (B.TableLens openFEC_DB_electionResults)
+  (B.TableLens openFEC_DB_candidate_to_load) = B.dbLenses
 
 instance B.Database be OpenFEC_DB
 

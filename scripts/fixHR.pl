@@ -7,7 +7,7 @@
     "Louisiana" => "LA",
     "Iowa" => "IA",
     "Georgia" => "GA",
-    "Arkansas" => "AK",
+    "Arkansas" => "AR",
     "Hawaii" => "HI",
     "Kansas" => "KS",
     "Vermont" => "VT",
@@ -19,10 +19,18 @@
     "Connecticut" => "CT",
     "Maine" => "ME",
     "Minnesota" => "MN",
-    "Nevada" => "NV"
+    "Nevada" => "NV",
+    "Arizona" => "AZ",
+    "Maryland" => "MD",
+    "Missouri" => "MO",    
+    "Montana" => "MT",
+    "Texas" => "TX",
+    "Mississippi" => "MS"
     );
 
-open (HR,"resultsHouse2018.txt");
+open (HR,"data/resultsHouse2018.txt");
+
+print "State,District,LastName,VoteShare\n";
 
 while ($line = <HR>) {
 #    print $line;

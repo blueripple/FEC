@@ -76,9 +76,6 @@ import qualified Text.PrettyPrint.Tabulate                as PP
 
 openFEC_SqlitePath = "/Users/adam/DataScience/DBs/FEC.db"
 
---data Forecast = Forecast { winP :: Double, voteShare :: Double {-, voteShare10 :: Double, voteShare90 :: Double -} } deriving (Show)
---data Spending = Spending { disbursement :: FEC.Amount, indSupport :: FEC.Amount, indOppose :: FEC.Amount, party :: FEC.Amount } deriving (Show)
-
 main :: IO ()
 main = do
   dbConn <- SL.open openFEC_SqlitePath

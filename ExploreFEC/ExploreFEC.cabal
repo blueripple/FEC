@@ -50,6 +50,7 @@ library
 
 executable dataLoader
   main-is:             Main.hs
+  other-modules:       Forecast538, ElectionResults
   build-depends:       base >=4.11 && <4.12
                      , aeson
                      , beam-core

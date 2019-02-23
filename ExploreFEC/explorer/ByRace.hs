@@ -42,7 +42,7 @@ import           Data.Time.Calendar.WeekDate              (toWeekDate)
 import           Data.Time.LocalTime                      (LocalTime (..))
 import           Data.Tuple.Select                        (sel1, sel2, sel3,
                                                            sel4, sel5, sel6,
-                                                           sel7, sel8)
+                                                           sel7, sel8, sel9)
 import           Data.Tuple.Update                        (upd5, upd6, upd7,
                                                            upd8)
 import           Formattable.NumFormat                    (formatNum, usdFmt)
@@ -61,7 +61,18 @@ allRaces dbConn office = do
   B.runBeamSqlite dbConn $ B.runSelectReturningList $ B.select $ allElections
 
 
-spendingAndForecastByRace :: SL.Connection -> FEC.Office -> FEC.State -> Maybe FEC.District -> IO [(T.Text,LocalTime,Double,Double,FEC.Amount,FEC.Amount,FEC.Amount,FEC.Amount)]
+electionResults :: SL.Connection -> IO (M.Map FEC.CandidateID Double)
+electionResults dbConn = do
+  asList <- B.runBeamSqlite dbConn $ B.runSelectReturningList $ B.select $ do
+    result <- B.all_ (FEC._openFEC_DB_electionResult FEC.openFEC_DB)
+    pure (result ^. FEC.electionResult_candidate_id, result ^. FEC.electionResult_voteshare)
+  return $ M.fromList asList
+
+spendingAndForecastByRace :: SL.Connection
+                          -> FEC.Office
+                          -> FEC.State
+                          -> Maybe FEC.District
+                          -> IO [(FEC.CandidateID, T.Text, LocalTime, Double, Double, FEC.Amount, FEC.Amount, FEC.Amount, FEC.Amount)]
 spendingAndForecastByRace dbConn office state districtM = do
   let allCandidates = B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
       allForecasts = B.all_ (FEC._openFEC_DB_forecast538 FEC.openFEC_DB)
@@ -94,7 +105,8 @@ spendingAndForecastByRace dbConn office state districtM = do
     partyExpenditures <- B.leftJoin_ aggregatedPartyExpenditures (\(id,date,_) -> (id `B.references_` candidate) B.&&. (date B.==. forecast ^. FEC.forecast538_forecast_date))
     B.guard_ ((FEC._forecast538_candidate_id forecast `B.references_` candidate)
               B.&&. (forecast ^. FEC.forecast538_model B.==. B.val_ "deluxe"))
-    pure ( forecast ^. FEC.forecast538_candidate_name
+    pure ( (candidate ^. FEC.candidate_id --forecast ^. FEC.forecast538_candidate_id
+         , forecast ^. FEC.forecast538_candidate_name)
          , forecast ^. FEC.forecast538_forecast_date
          , forecast ^. FEC.forecast538_winP
          , forecast ^. FEC.forecast538_voteshare
@@ -103,30 +115,35 @@ spendingAndForecastByRace dbConn office state districtM = do
          , sel4 indOppose
          , sel3 partyExpenditures)
   let g = maybe 0 (maybe 0 id)
-  return $ fmap (\(x1, x2, x3, x4, x5, x6, x7, x8) -> (x1, x2, x3, x4, g x5, g x6, g x7, g x8)) forecasts'
+  return $ fmap (\((x0, x1), x2, x3, x4, x5, x6, x7, x8) -> (x0, x1, x2, x3, x4, g x5, g x6, g x7, g x8)) forecasts'
 
 
-simplifySpendingAndForecast :: [(T.Text,LocalTime,Double,Double,FEC.Amount,FEC.Amount,FEC.Amount,FEC.Amount)]
-                            -> (M.Map T.Text Double, [((T.Text, LocalTime), (Double, FEC.Amount))], FEC.Amount)
-simplifySpendingAndForecast saf =
-  let fixForecast x = (sel1 x, sel2 x, Forecast (sel3 x) (sel4 x), Spending (sel5 x) (sel6 x) (sel7 x) (sel8 x))
+simplifySpendingAndForecast :: [(FEC.CandidateID, T.Text, LocalTime, Double, Double, FEC.Amount, FEC.Amount, FEC.Amount, FEC.Amount)]
+                            -> M.Map FEC.CandidateID Double -- election voteshare by Id
+                            -> (M.Map T.Text (Maybe Double), [((T.Text, LocalTime), (Double, FEC.Amount))], FEC.Amount)
+simplifySpendingAndForecast saf resultById =
+  let fixForecast x = (sel1 x, sel2 x, sel3 x, Forecast (sel4 x) (sel5 x), Spending (sel6 x) (sel7 x) (sel8 x) (sel9 x))
       forecasts = fixForecast <$> saf
       addOne x y h Seq.Empty               = Seq.singleton (x,y)
       addOne x y h s@(_ Seq.:|> (_,prevY)) = s Seq.|> (x,h prevY y)
       accum getX getY g = FL.Fold (\seq c -> addOne (getX c) (getY c) g seq) Seq.empty F.toList
-      h = accum (\f -> (sel1 f, sel2 f))
-      allSpend f = let s = sel4 f in (disbursement s) + (indSupport s) + (indOppose s) + (party s)
-      candidatesMF = FL.Fold (\m f -> M.insert (sel1 f) (voteShare . sel3 $ f) m) M.empty id --FL.premap sel1 FL.set
-      share = voteShare . sel3
-      allSpendNet f = let s = sel4 f in disbursement s + indSupport s + party s - indOppose s
+      h = accum (\f -> (sel2 f, sel3 f))
+      allSpend f = let s = sel5 f in (disbursement s) + (indSupport s) + (indOppose s) + (party s)
+      extractMap nameById = F.foldl' (\m (id, name) -> M.insert name (M.lookup id resultById) m) M.empty $ M.toList nameById
+      resultByNameMF = FL.Fold (\m f -> M.insert (sel1 f) (sel2 f) m) M.empty extractMap --FL.premap sel1 FL.set
+      share = voteShare . sel4
+      allSpendNet f = let s = sel5 f in disbursement s + indSupport s + party s - indOppose s
       in FL.fold ((,,)
-                  <$> candidatesMF
+                  <$> resultByNameMF
                   <*> h (share &&& allSpendNet) (\(_, prevY) (x,y) -> (x,prevY + y))
 --                  <*> h (\f -> let s = sel4 f in (disbursement s + indSupport s + party s - indOppose s)) (+)
                   <*> FL.premap allSpend FL.sum) forecasts
 
 
-topTwoVoteSharesAndTotals :: (M.Map T.Text Double, [((T.Text, LocalTime), (Double, FEC.Amount))], FEC.Amount) -> (T.Text, T.Text, Double, Double, FEC.Amount, FEC.Amount)
+
+
+topTwoVoteSharesAndTotals :: (M.Map T.Text Double, [((T.Text, LocalTime), (Double, FEC.Amount))], FEC.Amount)
+                          -> (T.Text, T.Text, Double, Double, FEC.Amount, FEC.Amount)
 topTwoVoteSharesAndTotals (candidatesM, shareAndSpend, total) =
   let topTwo = L.take 2 . reverse $ fst <$> (L.sortBy (\x y -> compare (snd x) (snd y)) $ M.toList candidatesM)
       c1 = head topTwo

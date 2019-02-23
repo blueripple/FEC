@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExplicitForAll            #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
@@ -14,6 +15,7 @@
 module Main where
 
 
+import           ExploreFEC.Config                        (DataSources (..))
 import           ExploreFEC.Data.Spending                 (CandidateSpending (..),
                                                            describeSpending)
 
@@ -43,56 +45,35 @@ import           Data.Tuple.Select                        (sel1, sel2, sel3,
                                                            sel4, sel5, sel6,
                                                            sel7, sel8)
 import           Formattable.NumFormat                    (formatNum, usdFmt)
---import           Text.Printf                              (printf)
 import           System.IO                                (hFlush, stdout)
+
+import qualified Dhall                                    as D
 
 import qualified Graphics.Rendering.Chart.Backend.Cairo   as C
 import qualified Graphics.Rendering.Chart.Easy            as C
 
 
-
-{-
-import           Control.Applicative                      ((<*>))
-
-
-import           Control.Monad                            (forM_, join, mapM_,
-                                                           sequence)
-import           Control.Monad.IO.Class                   (liftIO)
-import qualified Control.Monad.State                      as S
-
-import           Data.Aeson                               (encodeFile)
-
-
-import           Data.Maybe                               (isNothing)
-
-
-
-import qualified Data.Vector                              as V
-
-import qualified Text.PrettyPrint.Tabulate                as PP
--}
-
--- 1st just try to produce csv for one election, aggregated by a given timeframe.
-
-openFEC_SqlitePath = "/Users/adam/DataScience/DBs/FEC.db"
-
 main :: IO ()
 main = do
-  dbConn <- SL.open openFEC_SqlitePath
+  dataSources <- D.input D.auto "./config/dataSources.dhall"
+  dbConn <- SL.open (openFEC_2018_Db dataSources) --openFEC_SqlitePath
 --  forecasts <- spendingAndForecastByRace dbConn FEC.House state (Just district)
 --  let simplified = simplifySpendingAndForecast forecasts
   --C.toFile C.def (state ++ "-" ++ show district ++ ".png") $ topTwoDifferentialSpendChart state (Just district) simplified
   allHouseRaces <- fmap L.sort $ allRaces dbConn FEC.House
   x <- forM allHouseRaces $ \(s,d) -> do
     putStr $ (T.unpack s) ++ "-" ++ show d
+    results <- electionResults dbConn
     saf <- spendingAndForecastByRace dbConn FEC.House s (Just d)
-    let ssaf@(candM,_,_) = simplifySpendingAndForecast saf
-    res <- case (M.size candM < 2) of
+    let (candM,spend,tot) = simplifySpendingAndForecast saf results
+        cm = M.mapMaybe id candM
+    res <- case (M.size cm < 2) of
       True -> putStr "x" >> return Nothing
       False -> do
-        let (_,_,vsDiffStart,_,_,total) = topTwoVoteSharesAndTotals ssaf
+        let (_,_,vsDiffStart,_,_,total) = topTwoVoteSharesAndTotals (cm,spend,tot)
         return $ Just (s, d, vsDiffStart, total)
     putStr ", "
     hFlush stdout
     return res
+  putStrLn "\nCreating scatter plot, writing to spendVsVoteshare.png"
   C.toFile C.def ("spendVsVoteshare.png") $ topTwoSpendVsInitialVSDiffScatter (catMaybes x)

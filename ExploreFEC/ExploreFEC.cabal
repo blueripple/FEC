@@ -25,9 +25,10 @@ cabal-version:       >=1.10
 
 
 library
-  exposed-modules: ExploreFEC.Data.Spending
-  build-depends:       base >=4.11 && <4.12
+  exposed-modules: ExploreFEC.Data.Spending, ExploreFEC.Config
+  build-depends:       base >=4.11
                      , aeson
+                     , dhall
                      , foldl
                      , Frames
                      , fuzzyset
@@ -51,12 +52,13 @@ library
 executable dataLoader
   main-is:             Main.hs
   other-modules:       Forecast538, ElectionResults
-  build-depends:       base >=4.11 && <4.12
+  build-depends:       base >=4.11
                      , aeson
                      , beam-core
                      , beam-migrate
                      , beam-sqlite
                      , containers
+                     , dhall
                      , foldl
                      , Frames
                      , fuzzyset
@@ -83,13 +85,14 @@ executable dataLoader
 executable explorer
   main-is:             Main.hs
   other-modules:       ByRace
-  build-depends:       base >=4.11 && <4.12
+  build-depends:       base >=4.11
                      , beam-core
                      , beam-migrate
                      , beam-sqlite
                      , Chart
                      , Chart-cairo
                      , containers
+                     , dhall                     
                      , data-default
                      , formattable
                      , foldl
@@ -110,7 +113,7 @@ executable explorer
 
 executable thread-puller
   main-is:             Main.hs
-  build-depends:       base >=4.11 && <4.12
+  build-depends:       base >=4.11
                      , aeson
                      , beam-core
                      , beam-migrate
@@ -118,6 +121,7 @@ executable thread-puller
                      , Chart
                      , Chart-cairo
                      , containers
+                     , dhall                     
                      , foldl
                      , fuzzyset
                      , http-client >= 0.5.12

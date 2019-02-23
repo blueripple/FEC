@@ -22,7 +22,7 @@ library
                  , OpenFEC.Beam.Sqlite.CustomFields 
   -- other-modules: 
   -- other-extensions:
-  build-depends:       base >=4.11 && <4.12
+  build-depends:       base >=4.11
                      , aeson
                      , beam-core
                      , beam-sqlite
@@ -40,7 +40,7 @@ executable OpenFEC-beam-test
   main-is:             Main.hs
   -- other-modules:
   -- other-extensions:
-  build-depends:       base >=4.11 && <4.12
+  build-depends:       base >=4.11
                      , beam-core
                      , beam-sqlite
                      , beam-migrate

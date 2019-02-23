@@ -1,9 +1,9 @@
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExplicitForAll            #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE GADTs                     #-}
---{-# LANGUAGE ImpredicativeTypes        #-}
-{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE NoMonoLocalBinds          #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings         #-}
@@ -63,6 +63,8 @@ import qualified Data.Vector                              as V
 import           Data.Vinyl                               (ElField (..))
 import           Data.Vinyl.Curry                         (runcurryX)
 import           Data.Vinyl.Lens                          (rlens, rlens')
+import qualified Dhall                                    as D
+import           Frames
 import           Network.HTTP.Client                      (Manager, defaultManagerSettings,
                                                            managerModifyRequest,
                                                            newManager)
@@ -71,8 +73,6 @@ import           Servant.Client                           (ClientM,
                                                            ServantError,
                                                            mkClientEnv,
                                                            runClientM)
-
-import           Frames
 
 import qualified Text.PrettyPrint.Tabulate                as PP
 
@@ -185,42 +185,47 @@ candidateNameMatchMap cs =
         in M.insert k (FS.add fuzzy ln, M.insert ln (n, getId t) idByLastName) m
   in F.foldl' f M.empty cs
 
-openFEC_SqliteFile = "../DBs/FEC.db"
-houseForecastFile = "../data/house_district_forecast.csv"
+data Config = Config
+  {
+    openFEC_Db                :: FilePath
+  , electionYear              :: D.Natural
+  , doDbMigrations            :: Bool
+  , doUpdateCandidates        :: Bool
+  , doUpdateCommittees        :: Bool
+  , doUpdateSpendingWorkTable :: Bool
+  , doLoadTransactions        :: Bool
+  , doLoad538Data             :: Bool
+  , doLoadElectionResults     :: Bool
+  } deriving (D.Generic)
+instance D.Interpret Config
 
 main :: IO ()
 main = do
-  let electionYear = 2018
-      doDbMigrations = False
-      doUpdateCandidates = False
-      doUpdateCommittees = False
-      doUpdateSpendingWorkTable = False
-      doLoadTransactions = False
-      doLoad538Data = False
-      doLoadElectionResults = True
-      doIf doIt action = if doIt then action else return ()
+  let doIf doIt action = if doIt then action else return ()
       managerSettings = tlsManagerSettings { managerModifyRequest = \req -> FEC.delayQueries FEC.fecQueryLimit >> {- putStrLn req >> -}  return req }
+  config <- D.input D.auto "./config/dataloader.dhall"
+  let eYear = fromInteger . toInteger $ electionYear config
   manager <- newManager managerSettings
-  dbConn <- SL.open openFEC_SqliteFile
+  dbConn <- SL.open (openFEC_Db config) --openFEC_SqliteFile
   let clientEnv = mkClientEnv manager FEC.baseUrl
       runBeam = B.runBeamSqlite
   let runServant :: forall a. ClientM a -> IO (Either ServantError a)
       runServant x = runClientM x clientEnv
-  doIf doDbMigrations $ do
+  doIf (doDbMigrations config) $ do
     putStrLn $ "Doing DB migrations, if necessary."
     B.runBeamSqliteDebug putStrLn dbConn $ autoMigrate migrationBackend openFEC_DbMigratable
-  doIf doUpdateCandidates $ do
+  doIf (doUpdateCandidates config) $ do
     putStrLn $ "updating candidate table"
-    loadCandidates runServant dbConn (\x -> FEC.getCandidates [] [] Nothing Nothing (Just electionYear) x) [electionYear]
-  doIf doUpdateCommittees $ do
+    loadCandidates runServant dbConn (\x -> FEC.getCandidates [] [] Nothing Nothing (Just eYear) x) [eYear]
+  doIf (doUpdateCommittees config) $ do
     putStrLn $ "updating committee table"
-    loadCommittees runServant dbConn (FEC.getCommittees Nothing) [electionYear]
-  doIf doUpdateSpendingWorkTable $ runBeam dbConn $ do
+    loadCommittees runServant dbConn (FEC.getCommittees Nothing) [eYear]
+  doIf (doUpdateSpendingWorkTable config) $ runBeam dbConn $ do
     liftIO $ putStrLn $ "building tracking table for remaining transaction loading work, if necessary"
     candidates <- B.runSelectReturningList $ B.select $ B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
     let candidateIds = fmap (FEC.CandidateIdOnly . FEC.CandidateKey . FEC._candidate_id) candidates
     mapM_ (B.runInsert . B.insert (FEC._openFEC_DB_candidate_to_load FEC.openFEC_DB) . B.insertValues) $ chunksOf 900 candidateIds
-  doIf doLoadTransactions $ do
+  doIf (doLoadTransactions config) $ do
     candidatesToLoad <- runBeam dbConn $ B.runSelectReturningList $ B.select $ do
       let getAllCandidates = B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
           getAllCandidatesToLoad = B.all_ (FEC._openFEC_DB_candidate_to_load FEC.openFEC_DB)
@@ -232,9 +237,9 @@ main = do
     let numberedCandidates = reverse $ L.zip [1..] $ reverse candidatesToLoad
     forM_ numberedCandidates $ \(num_left,cand) -> do
       putStrLn $ show num_left ++ " remaining."
-      loadSpendingForCandidate runServant dbConn cand electionYear
-  doIf doLoad538Data $ load538ForecastData dbConn candidateNameMatchMap
-  doIf doLoadElectionResults $ loadElectionResults dbConn candidateNameMatchMap
+      loadSpendingForCandidate runServant dbConn cand eYear
+  doIf (doLoad538Data config) $ load538ForecastData dbConn candidateNameMatchMap
+  doIf (doLoadElectionResults config) $ loadElectionResults dbConn candidateNameMatchMap
 {-
   result <- runClientM query clientEnv
   case result of

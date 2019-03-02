@@ -30,6 +30,7 @@ common deps
                , Frames-utils
                , foldl
                , freer-simple
+               , here
                , hmatrix
                , lucid
                , pipes
@@ -83,5 +84,6 @@ executable mission
   main-is:        mission.hs
   build-depends: base >= 4.11
                , BlueRipple
+               , lens
                , time
   default-language: Haskell2010               

@@ -24,9 +24,9 @@ library
   -- other-extensions:
   build-depends:       base >=4.11
                      , aeson
-                     , beam-core
-                     , beam-sqlite
-                     , beam-migrate
+                     , beam-core >= 0.8.0.0
+                     , beam-sqlite >= 0.4.0.0
+                     , beam-migrate >= 0.4.0.0
                      , mtl
                      , text
                      , time
@@ -41,9 +41,9 @@ executable OpenFEC-beam-test
   -- other-modules:
   -- other-extensions:
   build-depends:       base >=4.11
-                     , beam-core
-                     , beam-sqlite
-                     , beam-migrate
+                     , beam-core >= 0.8.0.0
+                     , beam-sqlite >= 0.4.0.0
+                     , beam-migrate >= 0.4.0.0
                      , sqlite-simple
                      , OpenFEC-beam
   hs-source-dirs:      app

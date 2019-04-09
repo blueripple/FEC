@@ -15,32 +15,53 @@
 module OpenFEC.Beam.Types where
 
 
-import           Database.Beam             (C)
-import qualified Database.Beam             as B
-import qualified Database.Beam.Backend.SQL as B
-import qualified Database.Beam.Query       as B
+import           Database.Beam                  ( C )
+import qualified Database.Beam                 as B
+import qualified Database.Beam.Backend.SQL     as B
+import qualified Database.Beam.Query           as B
 
 
-import           Control.Monad.Identity    (Identity)
-import qualified Data.Aeson                as A
-import qualified Data.Aeson.Types          as A
-import           Data.Data                 (Data)
-import           Data.Scientific           (Scientific)
-import           Data.Text                 (Text)
-import           Data.Time.Clock           (UTCTime)
-import           Data.Time.LocalTime       (LocalTime, utc, utcToLocalTime)
-import qualified Data.Vector               as V
-import           GHC.Generics              (Generic)
+import           Control.Monad.Identity         ( Identity )
+import qualified Data.Aeson                    as A
+import qualified Data.Aeson.Types              as A
+import           Data.Data                      ( Data )
+import           Data.Scientific                ( Scientific )
+import           Data.Text                      ( Text )
+import           Data.Time.Clock                ( UTCTime )
+import           Data.Time.LocalTime            ( LocalTime
+                                                , utc
+                                                , utcToLocalTime
+                                                )
+import qualified Data.Vector                   as V
+import           GHC.Generics                   ( Generic )
 
 
 -- query Utilities
-runReturningVector :: (B.MonadBeam syntax be handle m, B.FromBackendRow be x) => syntax -> m (V.Vector x)
+runReturningVector
+  :: (B.MonadBeam a m, syntax ~ B.BeamSqlBackendSyntax a, B.FromBackendRow a x)
+  => syntax
+  -> m (V.Vector x)
 runReturningVector = fmap V.fromList . B.runReturningList
 
 -- | Run a 'SqlSelect' in a 'MonadBeam' and get the results as a vector
-runSelectReturningVector ::
-  (B.IsSql92Syntax cmd, B.MonadBeam cmd be hdl m, B.FromBackendRow be a) =>
-  B.SqlSelect (B.Sql92SelectSyntax cmd) a -> m (V.Vector a)
+runSelectReturningVector
+  :: ( B.IsSql92Syntax cmd
+     , B.FromBackendRow cmd a
+     , B.IsSql92Syntax (B.BeamSqlBackendSyntax cmd)
+     , B.MonadBeam cmd m
+     , B.Sql92SelectSyntax
+         (B.BeamSqlBackendSyntax (B.Sql92SelectSyntax cmd))
+         ~
+         B.Sql92SelectSyntax
+         cmd
+     , B.Sql92SelectSyntax
+         (B.BeamSqlBackendSyntax cmd)
+         ~
+         B.Sql92SelectSyntax
+         cmd
+     ){- , B.FromBackendRow m a-}
+  => B.SqlSelect (B.Sql92SelectSyntax cmd) a
+  -> m (V.Vector a)
 runSelectReturningVector (B.SqlSelect s) = runReturningVector (B.selectCmd s)
 
 type CandidateID = Text
@@ -64,9 +85,8 @@ data CandidateT f = Candidate
   , _candidate_party    :: C f Party
   } deriving (Generic)
 
-Candidate (B.LensFor candidate_id) (B.LensFor candidate_name)
-  (B.LensFor candidate_office) (B.LensFor candidate_state)
-  (B.LensFor candidate_district) (B.LensFor candidate_party) = B.tableLenses
+Candidate (B.LensFor candidate_id) (B.LensFor candidate_name) (B.LensFor candidate_office) (B.LensFor candidate_state) (B.LensFor candidate_district) (B.LensFor candidate_party)
+  = B.tableLenses
 
 type Candidate = CandidateT Identity
 type CandidateKey = B.PrimaryKey CandidateT Identity
@@ -99,9 +119,8 @@ data CommitteeT f = Committee
   , _committee_type       :: C f (Maybe Text) -- we should make this its own type, prolly
   } deriving (Generic)
 
-Committee (B.LensFor committee_id) (B.LensFor committee_designation)
-  (B.LensFor committee_name) (B.LensFor committee_type_full)
-  (B.LensFor committee_type) = B.tableLenses
+Committee (B.LensFor committee_id) (B.LensFor committee_designation) (B.LensFor committee_name) (B.LensFor committee_type_full) (B.LensFor committee_type)
+  = B.tableLenses
 
 
 type Committee = CommitteeT Identity
@@ -147,8 +166,12 @@ type Candidate_x_CommitteeKey = B.PrimaryKey Candidate_x_CommitteeT Identity
 instance B.Beamable Candidate_x_CommitteeT
 instance B.Beamable (B.PrimaryKey Candidate_x_CommitteeT)
 
-committeesCandidateRelationship :: B.ManyToMany OpenFEC_DB CandidateT CommitteeT
-committeesCandidateRelationship = B.manyToMany_ (_openFEC_DB_candidate_x_committee openFEC_DB) _candidate_x_committee_candidate_id _candidate_x_committee_committee_id
+committeesCandidateRelationship
+  :: B.ManyToMany be OpenFEC_DB CandidateT CommitteeT
+committeesCandidateRelationship = B.manyToMany_
+  (_openFEC_DB_candidate_x_committee openFEC_DB)
+  _candidate_x_committee_candidate_id
+  _candidate_x_committee_committee_id
 
 data DisbursementT f = Disbursement
   {
@@ -165,12 +188,8 @@ data DisbursementT f = Disbursement
   , _disbursement_id                :: C f Int
   } deriving (Generic)
 
-Disbursement (B.LensFor disbursement_date) (B.LensFor disbursement_amount)
-  (B.LensFor disbursement_amount_adj) (B.LensFor disbursement_num_candidates)
-  (B.LensFor disbursement_purpose_category) (B.LensFor disbursement_recipient_name)
-  (CandidateKey (B.LensFor disbursement_candidate_id))
-  (CommitteeKey (B.LensFor disbursement_committee_id)) (B.LensFor disbursement_line_number_label)
-  (B.LensFor disbursement_sub_id) (B.LensFor disbursement_id) = B.tableLenses
+Disbursement (B.LensFor disbursement_date) (B.LensFor disbursement_amount) (B.LensFor disbursement_amount_adj) (B.LensFor disbursement_num_candidates) (B.LensFor disbursement_purpose_category) (B.LensFor disbursement_recipient_name) (CandidateKey (B.LensFor disbursement_candidate_id)) (CommitteeKey (B.LensFor disbursement_committee_id)) (B.LensFor disbursement_line_number_label) (B.LensFor disbursement_sub_id) (B.LensFor disbursement_id)
+  = B.tableLenses
 
 type Disbursement = DisbursementT Identity
 type DisbursementKey = B.PrimaryKey DisbursementT Identity
@@ -202,12 +221,8 @@ data IndExpenditureT f  = IndExpenditure
   , _indExpenditure_id                       :: C f Int
   } deriving (Generic)
 
-IndExpenditure (B.LensFor indExpenditure_date) (B.LensFor indExpenditure_amount)
-  (B.LensFor indExpenditure_amount_from_ytd) (B.LensFor indExpenditure_support_oppose_indicator)
-  (B.LensFor indExpenditure_office_total_ytd) (B.LensFor indExpenditure_category_code_full)
-  (B.LensFor indExpenditure_description) (CandidateKey (B.LensFor indExpenditure_candidate_id))
-  (CommitteeKey (B.LensFor indExpenditure_committee_id))
-  (B.LensFor indExpenditure_sub_id) (B.LensFor indExpenditure_id) = B.tableLenses
+IndExpenditure (B.LensFor indExpenditure_date) (B.LensFor indExpenditure_amount) (B.LensFor indExpenditure_amount_from_ytd) (B.LensFor indExpenditure_support_oppose_indicator) (B.LensFor indExpenditure_office_total_ytd) (B.LensFor indExpenditure_category_code_full) (B.LensFor indExpenditure_description) (CandidateKey (B.LensFor indExpenditure_candidate_id)) (CommitteeKey (B.LensFor indExpenditure_committee_id)) (B.LensFor indExpenditure_sub_id) (B.LensFor indExpenditure_id)
+  = B.tableLenses
 
 type IndExpenditure = IndExpenditureT Identity
 type IndExpenditureKey = B.PrimaryKey IndExpenditureT Identity
@@ -234,11 +249,8 @@ data PartyExpenditureT f = PartyExpenditure
   , _partyExpenditure_id             :: C f Int
   } deriving (Generic)
 
-PartyExpenditure (B.LensFor partyExpenditure_date) (B.LensFor partyExpenditure_amount)
-  (B.LensFor partyExpenditure_purpose_full) (CandidateKey (B.LensFor partyExpenditure_candidate_id))
-  (CommitteeKey (B.LensFor partyExpenditure_committee_id))
-  (B.LensFor partyExpenditure_committee_name)
-  (B.LensFor partyExpenditure_sub_id) (B.LensFor partyExpenditure_id) = B.tableLenses
+PartyExpenditure (B.LensFor partyExpenditure_date) (B.LensFor partyExpenditure_amount) (B.LensFor partyExpenditure_purpose_full) (CandidateKey (B.LensFor partyExpenditure_candidate_id)) (CommitteeKey (B.LensFor partyExpenditure_committee_id)) (B.LensFor partyExpenditure_committee_name) (B.LensFor partyExpenditure_sub_id) (B.LensFor partyExpenditure_id)
+  = B.tableLenses
 
 type PartyExpenditure = PartyExpenditureT Identity
 type PartyExpenditureKey = B.PrimaryKey PartyExpenditureT Identity
@@ -282,11 +294,8 @@ data Forecast538T f = Forecast538
   , _forecast538_id             :: C f Int
   } deriving (Generic)
 
-Forecast538 (B.LensFor forecast538_forecast_date) (CandidateKey (B.LensFor forecast538_candidate_id))
-  (B.LensFor forecast538_candidate_name) (B.LensFor forecast538_incumbent)
-  (B.LensFor forecast538_model) (B.LensFor forecast538_winP)
-  (B.LensFor forecast538_voteshare)   (B.LensFor forecast538_voteshare10)
-  (B.LensFor forecast538_voteshare90) (B.LensFor forecast538_id) = B.tableLenses
+Forecast538 (B.LensFor forecast538_forecast_date) (CandidateKey (B.LensFor forecast538_candidate_id)) (B.LensFor forecast538_candidate_name) (B.LensFor forecast538_incumbent) (B.LensFor forecast538_model) (B.LensFor forecast538_winP) (B.LensFor forecast538_voteshare) (B.LensFor forecast538_voteshare10) (B.LensFor forecast538_voteshare90) (B.LensFor forecast538_id)
+  = B.tableLenses
 
 type Forecast538 = Forecast538T Identity
 type Forecast538Key = B.PrimaryKey Forecast538T Identity
@@ -310,9 +319,8 @@ data ElectionResultT f = ElectionResult
   , _electionResult_voteshare      :: C f Double
   } deriving (Generic)
 
-ElectionResult (CandidateKey (B.LensFor electionResult_candidate_id))
-  (B.LensFor electionResult_candidate_name)
-  (B.LensFor electionResult_voteshare) = B.tableLenses
+ElectionResult (CandidateKey (B.LensFor electionResult_candidate_id)) (B.LensFor electionResult_candidate_name) (B.LensFor electionResult_voteshare)
+  = B.tableLenses
 
 type ElectionResult = ElectionResultT Identity
 type ElectionResultKey = B.PrimaryKey ElectionResultT Identity
@@ -340,11 +348,8 @@ data OpenFEC_DB f = OpenFEC_DB
   , _openFEC_DB_candidate_to_load :: f (B.TableEntity CandidateIdOnlyT)
   } deriving (Generic)
 
-OpenFEC_DB (B.TableLens openFEC_DB_candidate) (B.TableLens openFEC_DB_committee)
-  (B.TableLens openFEC_DB_candidate_x_committee) (B.TableLens openFEC_DB_disbursement)
-  (B.TableLens openFEC_DB_indExpenditure) (B.TableLens openFEC_DB_partyExpenditure)
-  (B.TableLens openFEC_forecast538) (B.TableLens openFEC_DB_electionResults)
-  (B.TableLens openFEC_DB_candidate_to_load) = B.dbLenses
+OpenFEC_DB (B.TableLens openFEC_DB_candidate) (B.TableLens openFEC_DB_committee) (B.TableLens openFEC_DB_candidate_x_committee) (B.TableLens openFEC_DB_disbursement) (B.TableLens openFEC_DB_indExpenditure) (B.TableLens openFEC_DB_partyExpenditure) (B.TableLens openFEC_forecast538) (B.TableLens openFEC_DB_electionResults) (B.TableLens openFEC_DB_candidate_to_load)
+  = B.dbLenses
 
 instance B.Database be OpenFEC_DB
 

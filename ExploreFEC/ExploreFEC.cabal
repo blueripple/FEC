@@ -54,9 +54,9 @@ executable dataLoader
   other-modules:       Forecast538, ElectionResults
   build-depends:       base >=4.11
                      , aeson
-                     , beam-core
-                     , beam-migrate
-                     , beam-sqlite
+                     , beam-core >= 0.8.0.0
+                     , beam-migrate >= 0.4.0.0
+                     , beam-sqlite >= 0.4.0.0
                      , containers
                      , dhall
                      , foldl
@@ -86,9 +86,9 @@ executable explorer
   main-is:             Main.hs
   other-modules:       ByRace
   build-depends:       base >=4.11
-                     , beam-core
-                     , beam-migrate
-                     , beam-sqlite
+                     , beam-core >= 0.8.0.0
+                     , beam-migrate >= 0.4.0.0
+                     , beam-sqlite >= 0.4.0.0
                      , Chart
                      , Chart-cairo
                      , containers
@@ -115,11 +115,11 @@ executable thread-puller
   main-is:             Main.hs
   build-depends:       base >=4.11
                      , aeson
-                     , beam-core
-                     , beam-migrate
-                     , beam-sqlite
+                     , beam-core >= 0.8.0.0
+                     , beam-migrate >= 0.4.0.0
+                     , beam-sqlite >= 0.4.0.0
                      , Chart
-                     , Chart-cairo
+                     , Chart-cairo 
                      , containers
                      , dhall                     
                      , foldl

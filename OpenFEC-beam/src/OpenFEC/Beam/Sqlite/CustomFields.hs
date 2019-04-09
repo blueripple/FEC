@@ -4,17 +4,21 @@
 {-# LANGUAGE UndecidableInstances  #-}
 module OpenFEC.Beam.Sqlite.CustomFields where
 
-import qualified Database.Beam                    as B
-import qualified Database.Beam.Backend.SQL        as B
-import qualified Database.Beam.Migrate            as B
-import qualified Database.Beam.Sqlite             as B
-import qualified Database.Beam.Sqlite.Syntax      as B
-import qualified Database.SQLite.Simple.FromField as SL
+import qualified Database.Beam                 as B
+import qualified Database.Beam.Backend.SQL     as B
+import qualified Database.Beam.Migrate         as B
+import qualified Database.Beam.Sqlite          as B
+import qualified Database.Beam.Sqlite.Syntax   as B
+import qualified Database.SQLite.Simple.FromField
+                                               as SL
 
-import           OpenFEC.Beam.Types               (Office, Party,
-                                                   SpendingIntention)
+import           OpenFEC.Beam.Types             ( Office
+                                                , Party
+                                                , SpendingIntention
+                                                )
 
-import           Text.Read                        (readMaybe)
+import           Text.Read                      ( readMaybe )
+import qualified Data.Text                     as T
 
 -- marshall to DB as string via show.
 instance B.HasSqlValueSyntax be String => B.HasSqlValueSyntax be Party where
@@ -48,25 +52,33 @@ instance SL.FromField SpendingIntention where
       Nothing -> SL.returnError SL.ConversionFailed f "Could not 'read' value for Office"
       Just x -> pure x
 
-instance B.FromBackendRow B.Sqlite Party
-instance B.FromBackendRow B.Sqlite Office
-instance B.FromBackendRow B.Sqlite SpendingIntention
+instance B.FromBackendRow B.Sqlite Party where
+  fromBackendRow = read . T.unpack <$> B.fromBackendRow
 
-instance B.HasDefaultSqlDataType B.SqliteDataTypeSyntax Party where
-  defaultSqlDataType _ _ = B.sqliteTextType
+instance B.FromBackendRow B.Sqlite Office where
+  fromBackendRow = read . T.unpack <$> B.fromBackendRow
 
-instance B.HasDefaultSqlDataType B.SqliteDataTypeSyntax Office where
-  defaultSqlDataType _ _ = B.sqliteTextType
+instance B.FromBackendRow B.Sqlite SpendingIntention where
+    fromBackendRow = read . T.unpack <$> B.fromBackendRow
 
-instance B.HasDefaultSqlDataType B.SqliteDataTypeSyntax SpendingIntention where
-  defaultSqlDataType _ _ = B.sqliteTextType
 
+instance B.HasDefaultSqlDataType B.Sqlite Party where
+  defaultSqlDataType _ _ _ = B.sqliteTextType
+
+instance B.HasDefaultSqlDataType B.Sqlite Office where
+  defaultSqlDataType _ _ _ = B.sqliteTextType
+
+instance B.HasDefaultSqlDataType B.Sqlite SpendingIntention where
+  defaultSqlDataType _ _ _ = B.sqliteTextType
+
+{-
 instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax Party
 instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax Office
 instance B.HasDefaultSqlDataTypeConstraints B.SqliteColumnSchemaSyntax SpendingIntention
+-}
 
-instance B.IsSql92ExpressionSyntax s =>  B.HasSqlEqualityCheck s SpendingIntention
-instance B.IsSql92ExpressionSyntax s =>  B.HasSqlEqualityCheck s Office
+instance (B.BeamSqlBackend s) =>  B.HasSqlEqualityCheck s SpendingIntention
+instance (B.BeamSqlBackend s) =>  B.HasSqlEqualityCheck s Office
 
 {-
 --This doesn't belong here but is currently unused and I want to have a note of the syntax

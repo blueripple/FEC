@@ -8,5 +8,6 @@
 cabal.project.local
 *.json
 *.png
+*/TAGS
 TAGS
 .ghc.env*

@@ -1,4 +1,4 @@
-packages: ./OpenFEC-servant ./ExploreFEC ./OpenFEC-beam ../Frames-utils ../knit-haskell ../map-reduce-folds ../Frames-map-reduce ./BlueRipple
+packages: ./OpenFEC-servant ./ExploreFEC ./OpenFEC-beam ../Frames-utils ./BlueRipple
 jobs: 4
 with-compiler: /usr/local/bin/ghc
 

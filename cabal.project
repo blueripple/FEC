@@ -4,6 +4,12 @@ with-compiler: /usr/local/bin/ghc
 
 allow-newer: plots:containers
 
+-- until 0.5.0.0 is released
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/knit-haskell
+  tag: eba64beecc6c0a963844e56f6ccd3d123235e5b7
+
 --source-repository-package
 --    type: git
 --    location: https://github.com/isovector/polysemy
